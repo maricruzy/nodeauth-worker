@@ -6,6 +6,8 @@
     "deploy": "wrangler deploy --minify ./src/app/worker.ts",
     "build:docker": "node scripts/build-docker.js",
     "build:worker": "node scripts/build-worker.js",
+    "build:netlify": "node scripts/build-netlify.js",
+    "build:vercel": "node scripts/build-vercel.js",
     "test": "vitest run"
   },
   "dependencies": {
@@ -17,7 +19,7 @@
     "better-sqlite3": "^12.8.0",
     "dotenv": "^17.4.1",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.12",
+    "hono": "^4.12.18",
     "mysql2": "^3.20.0",
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.5",
@@ -43,8 +45,9 @@
     "undici": "7.24.6",
     "picomatch": "4.0.4",
     "yaml": "2.8.3",
-    "brace-expansion": "5.0.5",
+    "brace-expansion": "5.0.6",
     "minimatch": "10.2.4",
-    "vite": "8.0.5"
+    "vite": "8.0.5",
+    "ws": "8.20.1"
   }
 }
