@@ -1734,10 +1734,11 @@ async function getDerivedLicenseKey(masterKey, license) {
   let licenseFeature = "no_license_feature";
   try {
     if (license) {
-      const decoded = atob(license);
+      const clean2 = license.replace(/[^a-zA-Z0-9+/=]/g, "");
+      const decoded = atob(clean2);
       const licenseParts = decoded.split("|");
-      if (licenseParts.length === 3) {
-        licenseFeature = licenseParts[2];
+      if (licenseParts.length >= 3) {
+        licenseFeature = licenseParts[licenseParts.length - 1];
       }
     }
   } catch (e2) {
@@ -17496,7 +17497,7 @@ var require_x509_cjs = __commonJS({
         return obj;
       }
     };
-    var X509ChainBuilder = class {
+    var X509ChainBuilder2 = class {
       constructor(params = {}) {
         this.certificates = [];
         if (params.certificates) {
@@ -18082,7 +18083,7 @@ var require_x509_cjs = __commonJS({
     exports2.X509Certificate = X509Certificate2;
     exports2.X509CertificateGenerator = X509CertificateGenerator;
     exports2.X509Certificates = X509Certificates;
-    exports2.X509ChainBuilder = X509ChainBuilder;
+    exports2.X509ChainBuilder = X509ChainBuilder2;
     exports2.X509Crl = X509Crl2;
     exports2.X509CrlEntry = X509CrlEntry;
     exports2.X509CrlGenerator = X509CrlGenerator;
@@ -39175,20 +39176,15 @@ var defineWebSocketHelper = (handler) => {
     if (typeof args[0] === "function") {
       const [createEvents, options] = args;
       return async function upgradeWebSocket2(c, next) {
-        const events = await createEvents(c);
-        const result = await handler(c, events, options);
-        if (result) {
-          return result;
-        }
+        const result = await handler(c, await createEvents(c), options);
+        if (result) return result;
         await next();
       };
     } else {
       const [c, events, options] = args;
       return (async () => {
         const upgraded = await handler(c, events, options);
-        if (!upgraded) {
-          throw new Error("Failed to upgrade WebSocket");
-        }
+        if (!upgraded) throw new Error("Failed to upgrade WebSocket");
         return upgraded;
       })();
     }
@@ -40339,156 +40335,82 @@ var serve = (options, listeningListener) => {
 var import_node_cron = __toESM(require_node_cron(), 1);
 init_crypto();
 
-// node_modules/hono/dist/compose.js
-var compose = (middleware, onError, onNotFound) => {
-  return (context, next) => {
-    let index2 = -1;
-    return dispatch(0);
-    async function dispatch(i2) {
-      if (i2 <= index2) {
-        throw new Error("next() called multiple times");
-      }
-      index2 = i2;
-      let res;
-      let isError2 = false;
-      let handler;
-      if (middleware[i2]) {
-        handler = middleware[i2][0][0];
-        context.req.routeIndex = i2;
-      } else {
-        handler = i2 === middleware.length && next || void 0;
-      }
-      if (handler) {
-        try {
-          res = await handler(context, () => dispatch(i2 + 1));
-        } catch (err) {
-          if (err instanceof Error && onError) {
-            context.error = err;
-            res = await onError(err, context);
-            isError2 = true;
-          } else {
-            throw err;
-          }
-        }
-      } else {
-        if (context.finalized === false && onNotFound) {
-          res = await onNotFound(context);
-        }
-      }
-      if (res && (context.finalized === false || isError2)) {
-        context.res = res;
-      }
-      return context;
-    }
-  };
-};
-
 // node_modules/hono/dist/request/constants.js
 var GET_MATCH_RESULT = /* @__PURE__ */ Symbol();
 
 // node_modules/hono/dist/utils/buffer.js
 var bufferToFormData = (arrayBuffer, contentType2) => {
-  const response = new Response(arrayBuffer, {
-    headers: {
-      // Normalize the media type (case-insensitive) while keeping parameters like the boundary
-      "Content-Type": contentType2.replace(/^[^;]+/, (mediaType) => mediaType.toLowerCase())
-    }
-  });
-  return response.formData();
+  return new Response(arrayBuffer, { headers: { "Content-Type": contentType2.replace(/^[^;]+/, (mediaType) => mediaType.toLowerCase()) } }).formData();
 };
 
 // node_modules/hono/dist/utils/body.js
+var MAX_NESTED_OBJECTS = 1e4;
 var isRawRequest = (request2) => "headers" in request2;
 var parseBody = async (request2, options = /* @__PURE__ */ Object.create(null)) => {
   const { all = false, dot = false } = options;
-  const headers = isRawRequest(request2) ? request2.headers : request2.raw.headers;
-  const contentType2 = headers.get("Content-Type");
-  const mediaType = contentType2?.split(";")[0].trim().toLowerCase();
-  if (mediaType === "multipart/form-data" || mediaType === "application/x-www-form-urlencoded") {
-    return parseFormData(request2, { all, dot });
-  }
+  const mediaType = (isRawRequest(request2) ? request2.headers : request2.raw.headers).get("Content-Type")?.split(";")[0].trim().toLowerCase();
+  if (mediaType === "multipart/form-data" || mediaType === "application/x-www-form-urlencoded") return parseFormData(request2, {
+    all,
+    dot
+  });
   return {};
 };
 async function parseFormData(request2, options) {
-  if (!isRawRequest(request2) && request2.bodyCache.formData) {
-    return convertFormDataToBodyData(
-      await request2.bodyCache.formData,
-      options
-    );
-  }
+  if (!isRawRequest(request2) && request2.bodyCache.formData) return convertFormDataToBodyData(await request2.bodyCache.formData, options);
   const headers = isRawRequest(request2) ? request2.headers : request2.raw.headers;
   const arrayBuffer = await request2.arrayBuffer();
   const formDataPromise = bufferToFormData(arrayBuffer, headers.get("Content-Type") || "");
-  if (!isRawRequest(request2)) {
-    request2.bodyCache.formData = formDataPromise;
-  }
+  if (!isRawRequest(request2)) request2.bodyCache.formData = formDataPromise;
   const formData = await formDataPromise;
-  if (formData) {
-    return convertFormDataToBodyData(formData, options);
-  }
+  if (formData) return convertFormDataToBodyData(formData, options);
   return {};
 }
 function convertFormDataToBodyData(formData, options) {
   const form = /* @__PURE__ */ Object.create(null);
+  const nestingState = { count: 0 };
   formData.forEach((value, key) => {
-    const shouldParseAllValues = options.all || key.endsWith("[]");
-    if (!shouldParseAllValues) {
-      form[key] = value;
-    } else {
-      handleParsingAllValues(form, key, value);
+    if (!(options.all || key.endsWith("[]"))) form[key] = value;
+    else handleParsingAllValues(form, key, value);
+  });
+  if (options.dot) Object.entries(form).forEach(([key, value]) => {
+    if (key.includes(".")) {
+      handleParsingNestedValues(form, key, value, nestingState);
+      delete form[key];
     }
   });
-  if (options.dot) {
-    Object.entries(form).forEach(([key, value]) => {
-      const shouldParseDotValues = key.includes(".");
-      if (shouldParseDotValues) {
-        handleParsingNestedValues(form, key, value);
-        delete form[key];
-      }
-    });
-  }
   return form;
 }
 var handleParsingAllValues = (form, key, value) => {
   if (form[key] !== void 0) {
-    if (Array.isArray(form[key])) {
-      ;
-      form[key].push(value);
-    } else {
-      form[key] = [form[key], value];
-    }
-  } else {
-    if (!key.endsWith("[]")) {
-      form[key] = value;
-    } else {
-      form[key] = [value];
-    }
-  }
+    if (Array.isArray(form[key])) form[key].push(value);
+    else form[key] = [form[key], value];
+  } else if (!key.endsWith("[]")) form[key] = value;
+  else form[key] = [value];
 };
-var handleParsingNestedValues = (form, key, value) => {
-  if (/(?:^|\.)__proto__\./.test(key)) {
-    return;
-  }
+var handleParsingNestedValues = (form, key, value, state) => {
+  if (/(?:^|\.)__proto__\./.test(key)) return;
   let nestedForm = form;
-  const keys = key.split(".");
+  const keys = key.split(".", 34);
+  if (keys.length > 33) throwNestingLimitExceeded();
   keys.forEach((key2, index2) => {
-    if (index2 === keys.length - 1) {
-      nestedForm[key2] = value;
-    } else {
+    if (index2 === keys.length - 1) nestedForm[key2] = value;
+    else {
       if (!nestedForm[key2] || typeof nestedForm[key2] !== "object" || Array.isArray(nestedForm[key2]) || nestedForm[key2] instanceof File) {
+        if (state.count++ >= MAX_NESTED_OBJECTS) throwNestingLimitExceeded();
         nestedForm[key2] = /* @__PURE__ */ Object.create(null);
       }
       nestedForm = nestedForm[key2];
     }
   });
 };
+var throwNestingLimitExceeded = () => {
+  throw new Error("Nesting limit exceeded");
+};
 
 // node_modules/hono/dist/utils/url.js
 var splitPath = (path7) => {
   const paths = path7.split("/");
-  if (paths[0] === "") {
-    paths.shift();
-  }
+  if (paths[0] === "") paths.shift();
   return paths;
 };
 var splitRoutingPath = (routePath) => {
@@ -40503,34 +40425,42 @@ var extractGroupsFromPath = (path7) => {
     groups.push([mark, match3]);
     return mark;
   });
-  return { groups, path: path7 };
+  return {
+    groups,
+    path: path7
+  };
 };
 var replaceGroupMarks = (paths, groups) => {
   for (let i2 = groups.length - 1; i2 >= 0; i2--) {
     const [mark] = groups[i2];
-    for (let j = paths.length - 1; j >= 0; j--) {
-      if (paths[j].includes(mark)) {
-        paths[j] = paths[j].replace(mark, groups[i2][1]);
-        break;
-      }
+    for (let j = paths.length - 1; j >= 0; j--) if (paths[j].includes(mark)) {
+      paths[j] = paths[j].replace(mark, groups[i2][1]);
+      break;
     }
   }
   return paths;
 };
 var patternCache = {};
 var getPattern = (label, next) => {
-  if (label === "*") {
-    return "*";
-  }
+  if (label === "*") return "*";
   const match3 = label.match(/^\:([^\{\}]+)(?:\{(.+)\})?$/);
   if (match3) {
     const cacheKey3 = `${label}#${next}`;
     if (!patternCache[cacheKey3]) {
-      if (match3[2]) {
-        patternCache[cacheKey3] = next && next[0] !== ":" && next[0] !== "*" ? [cacheKey3, match3[1], new RegExp(`^${match3[2]}(?=/${next})`)] : [label, match3[1], new RegExp(`^${match3[2]}$`)];
-      } else {
-        patternCache[cacheKey3] = [label, match3[1], true];
-      }
+      if (match3[2]) patternCache[cacheKey3] = next && next[0] !== ":" && next[0] !== "*" ? [
+        cacheKey3,
+        match3[1],
+        new RegExp(`^${match3[2]}(?=/${next})`)
+      ] : [
+        label,
+        match3[1],
+        new RegExp(`^${match3[2]}$`)
+      ];
+      else patternCache[cacheKey3] = [
+        label,
+        match3[1],
+        true
+      ];
     }
     return patternCache[cacheKey3];
   }
@@ -40562,9 +40492,7 @@ var getPath = (request2) => {
       const end = queryIndex === -1 ? hashIndex === -1 ? void 0 : hashIndex : hashIndex === -1 ? queryIndex : Math.min(queryIndex, hashIndex);
       const path7 = url.slice(start, end);
       return tryDecodeURI(path7.includes("%25") ? path7.replace(/%25/g, "%2525") : path7);
-    } else if (charCode === 63 || charCode === 35) {
-      break;
-    }
+    } else if (charCode === 63 || charCode === 35) break;
   }
   return url.slice(start, i2);
 };
@@ -40573,70 +40501,52 @@ var getPathNoStrict = (request2) => {
   return result.length > 1 && result.at(-1) === "/" ? result.slice(0, -1) : result;
 };
 var mergePath = (base, sub, ...rest) => {
-  if (rest.length) {
-    sub = mergePath(sub, ...rest);
-  }
+  if (rest.length) sub = mergePath(sub, ...rest);
   return `${base?.[0] === "/" ? "" : "/"}${base}${sub === "/" ? "" : `${base?.at(-1) === "/" ? "" : "/"}${sub?.[0] === "/" ? sub.slice(1) : sub}`}`;
 };
 var checkOptionalParameter = (path7) => {
-  if (path7.charCodeAt(path7.length - 1) !== 63 || !path7.includes(":")) {
-    return null;
-  }
+  if (path7.charCodeAt(path7.length - 1) !== 63 || !path7.includes(":")) return null;
   const segments = path7.split("/");
   const results = [];
   let basePath = "";
   segments.forEach((segment) => {
-    if (segment !== "" && !/\:/.test(segment)) {
-      basePath += "/" + segment;
-    } else if (/\:/.test(segment)) {
-      if (/\?/.test(segment)) {
-        if (results.length === 0 && basePath === "") {
-          results.push("/");
-        } else {
-          results.push(basePath);
-        }
-        const optionalSegment = segment.replace("?", "");
+    if (segment !== "" && !/\:/.test(segment)) basePath += "/" + segment;
+    else if (/\:/.test(segment)) {
+      if (segment.charCodeAt(segment.length - 1) === 63) {
+        if (results.length === 0 && basePath === "") results.push("/");
+        else results.push(basePath);
+        const optionalSegment = segment.slice(0, -1);
         basePath += "/" + optionalSegment;
         results.push(basePath);
-      } else {
-        basePath += "/" + segment;
-      }
+      } else basePath += "/" + segment;
     }
   });
   return results.filter((v, i2, a) => a.indexOf(v) === i2);
 };
 var tryDecodeURIComponent = (str) => str.indexOf("%") !== -1 ? tryDecode(str, decodeURIComponent_) : str;
 var _decodeURI = (value) => {
-  if (value.indexOf("+") !== -1) {
-    value = value.replace(/\+/g, " ");
-  }
+  if (value.indexOf("+") !== -1) value = value.replace(/\+/g, " ");
   return tryDecodeURIComponent(value);
 };
 var _getQueryParam = (url, key, multiple) => {
+  const hashIndex = url.indexOf("#", 8);
+  if (hashIndex !== -1) url = url.slice(0, hashIndex);
   let encoded;
   if (!multiple && key && key.indexOf("%") === -1 && key.indexOf("+") === -1) {
     let keyIndex2 = url.indexOf("?", 8);
-    if (keyIndex2 === -1) {
-      return void 0;
-    }
-    if (!url.startsWith(key, keyIndex2 + 1)) {
-      keyIndex2 = url.indexOf(`&${key}`, keyIndex2 + 1);
-    }
+    if (keyIndex2 === -1) return;
+    if (!url.startsWith(key, keyIndex2 + 1)) keyIndex2 = url.indexOf(`&${key}`, keyIndex2 + 1);
     while (keyIndex2 !== -1) {
       const trailingKeyCode = url.charCodeAt(keyIndex2 + key.length + 1);
       if (trailingKeyCode === 61) {
         const valueIndex = keyIndex2 + key.length + 2;
         const endIndex = url.indexOf("&", valueIndex);
         return _decodeURI(url.slice(valueIndex, endIndex === -1 ? void 0 : endIndex));
-      } else if (trailingKeyCode == 38 || isNaN(trailingKeyCode)) {
-        return "";
-      }
+      } else if (trailingKeyCode == 38 || isNaN(trailingKeyCode)) return "";
       keyIndex2 = url.indexOf(`&${key}`, keyIndex2 + 1);
     }
     encoded = /[%+]/.test(url);
-    if (!encoded) {
-      return void 0;
-    }
+    if (!encoded) return;
   }
   const results = /* @__PURE__ */ Object.create(null);
   encoded ??= /[%+]/.test(url);
@@ -40644,38 +40554,21 @@ var _getQueryParam = (url, key, multiple) => {
   while (keyIndex !== -1) {
     const nextKeyIndex = url.indexOf("&", keyIndex + 1);
     let valueIndex = url.indexOf("=", keyIndex);
-    if (valueIndex > nextKeyIndex && nextKeyIndex !== -1) {
-      valueIndex = -1;
-    }
-    let name = url.slice(
-      keyIndex + 1,
-      valueIndex === -1 ? nextKeyIndex === -1 ? void 0 : nextKeyIndex : valueIndex
-    );
-    if (encoded) {
-      name = _decodeURI(name);
-    }
+    if (valueIndex > nextKeyIndex && nextKeyIndex !== -1) valueIndex = -1;
+    let name = url.slice(keyIndex + 1, valueIndex === -1 ? nextKeyIndex === -1 ? void 0 : nextKeyIndex : valueIndex);
+    if (encoded) name = _decodeURI(name);
     keyIndex = nextKeyIndex;
-    if (name === "") {
-      continue;
-    }
+    if (name === "") continue;
     let value;
-    if (valueIndex === -1) {
-      value = "";
-    } else {
+    if (valueIndex === -1) value = "";
+    else {
       value = url.slice(valueIndex + 1, nextKeyIndex === -1 ? void 0 : nextKeyIndex);
-      if (encoded) {
-        value = _decodeURI(value);
-      }
+      if (encoded) value = _decodeURI(value);
     }
     if (multiple) {
-      if (!(results[name] && Array.isArray(results[name]))) {
-        results[name] = [];
-      }
-      ;
+      if (!(results[name] && Array.isArray(results[name]))) results[name] = [];
       results[name].push(value);
-    } else {
-      results[name] ??= value;
-    }
+    } else results[name] ??= value;
   }
   return key ? results[key] : results;
 };
@@ -40688,36 +40581,35 @@ var decodeURIComponent_ = decodeURIComponent;
 // node_modules/hono/dist/request.js
 var HonoRequest = class {
   /**
-   * `.raw` can get the raw Request object.
-   *
-   * @see {@link https://hono.dev/docs/api/request#raw}
-   *
-   * @example
-   * ```ts
-   * // For Cloudflare Workers
-   * app.post('/', async (c) => {
-   *   const metadata = c.req.raw.cf?.hostMetadata?
-   *   ...
-   * })
-   * ```
-   */
+  * `.raw` can get the raw Request object.
+  *
+  * @see {@link https://hono.dev/docs/api/request#raw}
+  *
+  * @example
+  * ```ts
+  * // For Cloudflare Workers
+  * app.post('/', async (c) => {
+  *   const metadata = c.req.raw.cf?.hostMetadata?
+  *   ...
+  * })
+  * ```
+  */
   raw;
   #validatedData;
-  // Short name of validatedData
   #matchResult;
   routeIndex = 0;
   /**
-   * `.path` can get the pathname of the request.
-   *
-   * @see {@link https://hono.dev/docs/api/request#path}
-   *
-   * @example
-   * ```ts
-   * app.get('/about/me', (c) => {
-   *   const pathname = c.req.path // `/about/me`
-   * })
-   * ```
-   */
+  * `.path` can get the pathname of the request.
+  *
+  * @see {@link https://hono.dev/docs/api/request#path}
+  *
+  * @example
+  * ```ts
+  * app.get('/about/me', (c) => {
+  *   const pathname = c.req.path // `/about/me`
+  * })
+  * ```
+  */
   path;
   bodyCache = {};
   constructor(request2, path7 = "/", matchResult = [[]]) {
@@ -40729,18 +40621,16 @@ var HonoRequest = class {
     return key ? this.#getDecodedParam(key) : this.#getAllDecodedParams();
   }
   #getDecodedParam(key) {
-    const paramKey = this.#matchResult[0][this.routeIndex][1][key];
+    const paramKey = this.#matchResult[0][this.routeIndex]?.[1][key];
     const param = this.#getParamValue(paramKey);
     return param && tryDecodeURIComponent(param);
   }
   #getAllDecodedParams() {
     const decoded = {};
-    const keys = Object.keys(this.#matchResult[0][this.routeIndex][1]);
+    const keys = Object.keys(this.#matchResult[0][this.routeIndex]?.[1] ?? {});
     for (const key of keys) {
       const value = this.#getParamValue(this.#matchResult[0][this.routeIndex][1][key]);
-      if (value !== void 0) {
-        decoded[key] = tryDecodeURIComponent(value);
-      }
+      if (value !== void 0) decoded[key] = tryDecodeURIComponent(value);
     }
     return decoded;
   }
@@ -40754,9 +40644,7 @@ var HonoRequest = class {
     return getQueryParams(this.url, key);
   }
   header(name) {
-    if (name) {
-      return this.raw.headers.get(name) ?? void 0;
-    }
+    if (name) return this.raw.headers.get(name) ?? void 0;
     const headerData = /* @__PURE__ */ Object.create(null);
     this.raw.headers.forEach((value, key) => {
       headerData[key] = value;
@@ -40769,146 +40657,140 @@ var HonoRequest = class {
   #cachedBody = (key) => {
     const { bodyCache, raw: raw2 } = this;
     const cachedBody = bodyCache[key];
-    if (cachedBody) {
-      return cachedBody;
-    }
-    for (const anyCachedKey in bodyCache) {
-      return bodyCache[anyCachedKey].then((body) => {
-        if (anyCachedKey === "json") {
-          body = JSON.stringify(body);
-        }
-        return new Response(body)[key]();
-      });
-    }
+    if (cachedBody) return cachedBody;
+    for (const anyCachedKey in bodyCache) return bodyCache[anyCachedKey].then((body) => {
+      if (anyCachedKey === "json") body = JSON.stringify(body);
+      const contentType2 = anyCachedKey === "formData" ? void 0 : raw2.headers.get("content-type");
+      return new Response(body, { headers: contentType2 ? { "Content-Type": contentType2 } : void 0 })[key]();
+    });
     return bodyCache[key] = raw2[key]();
   };
   /**
-   * `.json()` can parse Request body of type `application/json`
-   *
-   * @see {@link https://hono.dev/docs/api/request#json}
-   *
-   * @example
-   * ```ts
-   * app.post('/entry', async (c) => {
-   *   const body = await c.req.json()
-   * })
-   * ```
-   */
+  * `.json()` can parse Request body of type `application/json`
+  *
+  * @see {@link https://hono.dev/docs/api/request#json}
+  *
+  * @example
+  * ```ts
+  * app.post('/entry', async (c) => {
+  *   const body = await c.req.json()
+  * })
+  * ```
+  */
   json() {
     return this.#cachedBody("text").then((text4) => JSON.parse(text4));
   }
   /**
-   * `.text()` can parse Request body of type `text/plain`
-   *
-   * @see {@link https://hono.dev/docs/api/request#text}
-   *
-   * @example
-   * ```ts
-   * app.post('/entry', async (c) => {
-   *   const body = await c.req.text()
-   * })
-   * ```
-   */
+  * `.text()` can parse Request body of type `text/plain`
+  *
+  * @see {@link https://hono.dev/docs/api/request#text}
+  *
+  * @example
+  * ```ts
+  * app.post('/entry', async (c) => {
+  *   const body = await c.req.text()
+  * })
+  * ```
+  */
   text() {
     return this.#cachedBody("text");
   }
   /**
-   * `.arrayBuffer()` parse Request body as an `ArrayBuffer`
-   *
-   * @see {@link https://hono.dev/docs/api/request#arraybuffer}
-   *
-   * @example
-   * ```ts
-   * app.post('/entry', async (c) => {
-   *   const body = await c.req.arrayBuffer()
-   * })
-   * ```
-   */
+  * `.arrayBuffer()` parse Request body as an `ArrayBuffer`
+  *
+  * @see {@link https://hono.dev/docs/api/request#arraybuffer}
+  *
+  * @example
+  * ```ts
+  * app.post('/entry', async (c) => {
+  *   const body = await c.req.arrayBuffer()
+  * })
+  * ```
+  */
   arrayBuffer() {
     return this.#cachedBody("arrayBuffer");
   }
   /**
-   * `.bytes()` parses the request body as a `Uint8Array`.
-   *
-   * @see {@link https://hono.dev/docs/api/request#bytes}
-   *
-   * @example
-   * ```ts
-   * app.post('/entry', async (c) => {
-   *   const body = await c.req.bytes()
-   * })
-   * ```
-   */
+  * `.bytes()` parses the request body as a `Uint8Array`.
+  *
+  * @see {@link https://hono.dev/docs/api/request#bytes}
+  *
+  * @example
+  * ```ts
+  * app.post('/entry', async (c) => {
+  *   const body = await c.req.bytes()
+  * })
+  * ```
+  */
   bytes() {
     return this.#cachedBody("arrayBuffer").then((buffer2) => new Uint8Array(buffer2));
   }
   /**
-   * Parses the request body as a `Blob`.
-   * @example
-   * ```ts
-   * app.post('/entry', async (c) => {
-   *   const body = await c.req.blob();
-   * });
-   * ```
-   * @see https://hono.dev/docs/api/request#blob
-   */
+  * Parses the request body as a `Blob`.
+  * @example
+  * ```ts
+  * app.post('/entry', async (c) => {
+  *   const body = await c.req.blob();
+  * });
+  * ```
+  * @see https://hono.dev/docs/api/request#blob
+  */
   blob() {
     return this.#cachedBody("blob");
   }
   /**
-   * Parses the request body as `FormData`.
-   * @example
-   * ```ts
-   * app.post('/entry', async (c) => {
-   *   const body = await c.req.formData();
-   * });
-   * ```
-   * @see https://hono.dev/docs/api/request#formdata
-   */
+  * Parses the request body as `FormData`.
+  * @example
+  * ```ts
+  * app.post('/entry', async (c) => {
+  *   const body = await c.req.formData();
+  * });
+  * ```
+  * @see https://hono.dev/docs/api/request#formdata
+  */
   formData() {
     return this.#cachedBody("formData");
   }
   /**
-   * Adds validated data to the request.
-   *
-   * @param target - The target of the validation.
-   * @param data - The validated data to add.
-   */
+  * Adds validated data to the request.
+  *
+  * @param target - The target of the validation.
+  * @param data - The validated data to add.
+  */
   addValidatedData(target, data) {
-    ;
     (this.#validatedData ??= {})[target] = data;
   }
   valid(target) {
     return this.#validatedData?.[target];
   }
   /**
-   * `.url()` can get the request url strings.
-   *
-   * @see {@link https://hono.dev/docs/api/request#url}
-   *
-   * @example
-   * ```ts
-   * app.get('/about/me', (c) => {
-   *   const url = c.req.url // `http://localhost:8787/about/me`
-   *   ...
-   * })
-   * ```
-   */
+  * `.url` can get the request url strings.
+  *
+  * @see {@link https://hono.dev/docs/api/request#url}
+  *
+  * @example
+  * ```ts
+  * app.get('/about/me', (c) => {
+  *   const url = c.req.url // `http://localhost:8787/about/me`
+  *   ...
+  * })
+  * ```
+  */
   get url() {
     return this.raw.url;
   }
   /**
-   * `.method()` can get the method name of the request.
-   *
-   * @see {@link https://hono.dev/docs/api/request#method}
-   *
-   * @example
-   * ```ts
-   * app.get('/about/me', (c) => {
-   *   const method = c.req.method // `GET`
-   * })
-   * ```
-   */
+  * `.method` can get the method name of the request.
+  *
+  * @see {@link https://hono.dev/docs/api/request#method}
+  *
+  * @example
+  * ```ts
+  * app.get('/about/me', (c) => {
+  *   const method = c.req.method // `GET`
+  * })
+  * ```
+  */
   get method() {
     return this.raw.method;
   }
@@ -40916,51 +40798,51 @@ var HonoRequest = class {
     return this.#matchResult;
   }
   /**
-   * `.matchedRoutes()` can return a matched route in the handler
-   *
-   * @deprecated
-   *
-   * Use matchedRoutes helper defined in "hono/route" instead.
-   *
-   * @see {@link https://hono.dev/docs/api/request#matchedroutes}
-   *
-   * @example
-   * ```ts
-   * app.use('*', async function logger(c, next) {
-   *   await next()
-   *   c.req.matchedRoutes.forEach(({ handler, method, path }, i) => {
-   *     const name = handler.name || (handler.length < 2 ? '[handler]' : '[middleware]')
-   *     console.log(
-   *       method,
-   *       ' ',
-   *       path,
-   *       ' '.repeat(Math.max(10 - path.length, 0)),
-   *       name,
-   *       i === c.req.routeIndex ? '<- respond from here' : ''
-   *     )
-   *   })
-   * })
-   * ```
-   */
+  * `.matchedRoutes` can return a matched route in the handler
+  *
+  * @deprecated
+  *
+  * Use matchedRoutes helper defined in "hono/route" instead.
+  *
+  * @see {@link https://hono.dev/docs/api/request#matchedroutes}
+  *
+  * @example
+  * ```ts
+  * app.use('*', async function logger(c, next) {
+  *   await next()
+  *   c.req.matchedRoutes.forEach(({ handler, method, path }, i) => {
+  *     const name = handler.name || (handler.length < 2 ? '[handler]' : '[middleware]')
+  *     console.log(
+  *       method,
+  *       ' ',
+  *       path,
+  *       ' '.repeat(Math.max(10 - path.length, 0)),
+  *       name,
+  *       i === c.req.routeIndex ? '<- respond from here' : ''
+  *     )
+  *   })
+  * })
+  * ```
+  */
   get matchedRoutes() {
     return this.#matchResult[0].map(([[, route]]) => route);
   }
   /**
-   * `routePath()` can retrieve the path registered within the handler
-   *
-   * @deprecated
-   *
-   * Use routePath helper defined in "hono/route" instead.
-   *
-   * @see {@link https://hono.dev/docs/api/request#routepath}
-   *
-   * @example
-   * ```ts
-   * app.get('/posts/:id', (c) => {
-   *   return c.json({ path: c.req.routePath })
-   * })
-   * ```
-   */
+  * `.routePath` can retrieve the path registered within the handler
+  *
+  * @deprecated
+  *
+  * Use routePath helper defined in "hono/route" instead.
+  *
+  * @see {@link https://hono.dev/docs/api/request#routepath}
+  *
+  * @example
+  * ```ts
+  * app.get('/posts/:id', (c) => {
+  *   return c.json({ path: c.req.routePath })
+  * })
+  * ```
+  */
   get routePath() {
     return this.#matchResult[0].map(([[, route]]) => route)[this.routeIndex].path;
   }
@@ -40980,32 +40862,20 @@ var raw = (value, callbacks) => {
 };
 var resolveCallback = async (str, phase, preserveCallbacks, context, buffer2) => {
   if (typeof str === "object" && !(str instanceof String)) {
-    if (!(str instanceof Promise)) {
-      str = str.toString();
-    }
-    if (str instanceof Promise) {
-      str = await str;
-    }
+    if (!(str instanceof Promise)) str = str.toString();
+    if (str instanceof Promise) str = await str;
   }
   const callbacks = str.callbacks;
-  if (!callbacks?.length) {
-    return Promise.resolve(str);
-  }
-  if (buffer2) {
-    buffer2[0] += str;
-  } else {
-    buffer2 = [str];
-  }
-  const resStr = Promise.all(callbacks.map((c) => c({ phase, buffer: buffer2, context }))).then(
-    (res) => Promise.all(
-      res.filter(Boolean).map((str2) => resolveCallback(str2, phase, false, context, buffer2))
-    ).then(() => buffer2[0])
-  );
-  if (preserveCallbacks) {
-    return raw(await resStr, callbacks);
-  } else {
-    return resStr;
-  }
+  if (!callbacks?.length) return Promise.resolve(str);
+  if (buffer2) buffer2[0] += str;
+  else buffer2 = [str];
+  const resStr = Promise.all(callbacks.map((c) => c({
+    phase,
+    buffer: buffer2,
+    context
+  }))).then((res) => Promise.all(res.filter(Boolean).map((str2) => resolveCallback(str2, phase, false, context, buffer2))).then(() => buffer2[0]));
+  if (preserveCallbacks) return raw(await resStr, callbacks);
+  else return resStr;
 };
 
 // node_modules/hono/dist/context.js
@@ -41021,36 +40891,36 @@ var Context = class {
   #rawRequest;
   #req;
   /**
-   * `.env` can get bindings (environment variables, secrets, KV namespaces, D1 database, R2 bucket etc.) in Cloudflare Workers.
-   *
-   * @see {@link https://hono.dev/docs/api/context#env}
-   *
-   * @example
-   * ```ts
-   * // Environment object for Cloudflare Workers
-   * app.get('*', async c => {
-   *   const counter = c.env.COUNTER
-   * })
-   * ```
-   */
+  * `.env` can get bindings (environment variables, secrets, KV namespaces, D1 database, R2 bucket etc.) in Cloudflare Workers.
+  *
+  * @see {@link https://hono.dev/docs/api/context#env}
+  *
+  * @example
+  * ```ts
+  * // Environment object for Cloudflare Workers
+  * app.get('*', async c => {
+  *   const counter = c.env.COUNTER
+  * })
+  * ```
+  */
   env = {};
   #var;
   finalized = false;
   /**
-   * `.error` can get the error object from the middleware if the Handler throws an error.
-   *
-   * @see {@link https://hono.dev/docs/api/context#error}
-   *
-   * @example
-   * ```ts
-   * app.use('*', async (c, next) => {
-   *   await next()
-   *   if (c.error) {
-   *     // do something...
-   *   }
-   * })
-   * ```
-   */
+  * `.error` can get the error object from the middleware if the Handler throws an error.
+  *
+  * @see {@link https://hono.dev/docs/api/context#error}
+  *
+  * @example
+  * ```ts
+  * app.use('*', async (c, next) => {
+  *   await next()
+  *   if (c.error) {
+  *     // do something...
+  *   }
+  * })
+  * ```
+  */
   error;
   #status;
   #executionCtx;
@@ -41062,11 +40932,11 @@ var Context = class {
   #matchResult;
   #path;
   /**
-   * Creates an instance of the Context class.
-   *
-   * @param req - The Request object.
-   * @param options - Optional configuration options for the context.
-   */
+  * Creates an instance of the Context class.
+  *
+  * @param req - The Request object.
+  * @param options - Optional configuration options for the context.
+  */
   constructor(req, options) {
     this.#rawRequest = req;
     if (options) {
@@ -41078,241 +40948,210 @@ var Context = class {
     }
   }
   /**
-   * `.req` is the instance of {@link HonoRequest}.
-   */
+  * `.req` is the instance of {@link HonoRequest}.
+  */
   get req() {
     this.#req ??= new HonoRequest(this.#rawRequest, this.#path, this.#matchResult);
     return this.#req;
   }
   /**
-   * @see {@link https://hono.dev/docs/api/context#event}
-   * The FetchEvent associated with the current request.
-   *
-   * @throws Will throw an error if the context does not have a FetchEvent.
-   */
+  * @see {@link https://hono.dev/docs/api/context#event}
+  * The FetchEvent associated with the current request.
+  *
+  * @throws Will throw an error if the context does not have a FetchEvent.
+  */
   get event() {
-    if (this.#executionCtx && "respondWith" in this.#executionCtx) {
-      return this.#executionCtx;
-    } else {
-      throw Error("This context has no FetchEvent");
-    }
+    if (this.#executionCtx && "respondWith" in this.#executionCtx) return this.#executionCtx;
+    else throw Error("This context has no FetchEvent");
   }
   /**
-   * @see {@link https://hono.dev/docs/api/context#executionctx}
-   * The ExecutionContext associated with the current request.
-   *
-   * @throws Will throw an error if the context does not have an ExecutionContext.
-   */
+  * @see {@link https://hono.dev/docs/api/context#executionctx}
+  * The ExecutionContext associated with the current request.
+  *
+  * @throws Will throw an error if the context does not have an ExecutionContext.
+  */
   get executionCtx() {
-    if (this.#executionCtx) {
-      return this.#executionCtx;
-    } else {
-      throw Error("This context has no ExecutionContext");
-    }
+    if (this.#executionCtx) return this.#executionCtx;
+    else throw Error("This context has no ExecutionContext");
   }
   /**
-   * @see {@link https://hono.dev/docs/api/context#res}
-   * The Response object for the current request.
-   */
+  * @see {@link https://hono.dev/docs/api/context#res}
+  * The Response object for the current request.
+  */
   get res() {
-    return this.#res ||= createResponseInstance(null, {
-      headers: this.#preparedHeaders ??= new Headers()
-    });
+    return this.#res ||= createResponseInstance(null, { headers: this.#preparedHeaders ??= new Headers() });
   }
   /**
-   * Sets the Response object for the current request.
-   *
-   * @param _res - The Response object to set.
-   */
+  * Sets the Response object for the current request.
+  *
+  * @param _res - The Response object to set.
+  */
   set res(_res) {
     if (this.#res && _res) {
       _res = createResponseInstance(_res.body, _res);
       for (const [k, v] of this.#res.headers.entries()) {
-        if (k === "content-type") {
-          continue;
-        }
+        if (k === "content-type") continue;
         if (k === "set-cookie") {
           const cookies = this.#res.headers.getSetCookie();
           _res.headers.delete("set-cookie");
-          for (const cookie of cookies) {
-            _res.headers.append("set-cookie", cookie);
-          }
-        } else {
-          _res.headers.set(k, v);
-        }
+          for (const cookie of cookies) _res.headers.append("set-cookie", cookie);
+        } else _res.headers.set(k, v);
       }
     }
     this.#res = _res;
     this.finalized = true;
   }
   /**
-   * `.render()` can create a response within a layout.
-   *
-   * @see {@link https://hono.dev/docs/api/context#render-setrenderer}
-   *
-   * @example
-   * ```ts
-   * app.get('/', (c) => {
-   *   return c.render('Hello!')
-   * })
-   * ```
-   */
+  * `.render()` can create a response within a layout.
+  *
+  * @see {@link https://hono.dev/docs/api/context#render-setrenderer}
+  *
+  * @example
+  * ```ts
+  * app.get('/', (c) => {
+  *   return c.render('Hello!')
+  * })
+  * ```
+  */
   render = (...args) => {
     this.#renderer ??= (content) => this.html(content);
     return this.#renderer(...args);
   };
   /**
-   * Sets the layout for the response.
-   *
-   * @param layout - The layout to set.
-   * @returns The layout function.
-   */
+  * Sets the layout for the response.
+  *
+  * @param layout - The layout to set.
+  * @returns The layout function.
+  */
   setLayout = (layout) => this.#layout = layout;
   /**
-   * Gets the current layout for the response.
-   *
-   * @returns The current layout function.
-   */
+  * Gets the current layout for the response.
+  *
+  * @returns The current layout function.
+  */
   getLayout = () => this.#layout;
   /**
-   * `.setRenderer()` can set the layout in the custom middleware.
-   *
-   * @see {@link https://hono.dev/docs/api/context#render-setrenderer}
-   *
-   * @example
-   * ```tsx
-   * app.use('*', async (c, next) => {
-   *   c.setRenderer((content) => {
-   *     return c.html(
-   *       <html>
-   *         <body>
-   *           <p>{content}</p>
-   *         </body>
-   *       </html>
-   *     )
-   *   })
-   *   await next()
-   * })
-   * ```
-   */
+  * `.setRenderer()` can set the layout in the custom middleware.
+  *
+  * @see {@link https://hono.dev/docs/api/context#render-setrenderer}
+  *
+  * @example
+  * ```tsx
+  * app.use('*', async (c, next) => {
+  *   c.setRenderer((content) => {
+  *     return c.html(
+  *       <html>
+  *         <body>
+  *           <p>{content}</p>
+  *         </body>
+  *       </html>
+  *     )
+  *   })
+  *   await next()
+  * })
+  * ```
+  */
   setRenderer = (renderer) => {
     this.#renderer = renderer;
   };
   /**
-   * `.header()` can set headers.
-   *
-   * @see {@link https://hono.dev/docs/api/context#header}
-   *
-   * @example
-   * ```ts
-   * app.get('/welcome', (c) => {
-   *   // Set headers
-   *   c.header('X-Message', 'Hello!')
-   *   c.header('Content-Type', 'text/plain')
-   *
-   *   return c.body('Thank you for coming')
-   * })
-   * ```
-   */
+  * `.header()` can set headers.
+  *
+  * @see {@link https://hono.dev/docs/api/context#header}
+  *
+  * @example
+  * ```ts
+  * app.get('/welcome', (c) => {
+  *   // Set headers
+  *   c.header('X-Message', 'Hello!')
+  *   c.header('Content-Type', 'text/plain')
+  *
+  *   // Append multiple headers using the append option (e.g. Vary)
+  *   c.header('Vary', 'Accept-Encoding', { append: true })
+  *   c.header('Vary', 'User-Agent', { append: true })
+  *
+  *   return c.body('Thank you for coming')
+  * })
+  * ```
+  */
   header = (name, value, options) => {
-    if (this.finalized) {
-      this.#res = createResponseInstance(this.#res.body, this.#res);
-    }
+    if (this.finalized) this.#res = createResponseInstance(this.#res.body, this.#res);
     const headers = this.#res ? this.#res.headers : this.#preparedHeaders ??= new Headers();
-    if (value === void 0) {
-      headers.delete(name);
-    } else if (options?.append) {
-      headers.append(name, value);
-    } else {
-      headers.set(name, value);
-    }
+    if (value === void 0) headers.delete(name);
+    else if (options?.append) headers.append(name, value);
+    else headers.set(name, value);
   };
   status = (status) => {
     this.#status = status;
   };
   /**
-   * `.set()` can set the value specified by the key.
-   *
-   * @see {@link https://hono.dev/docs/api/context#set-get}
-   *
-   * @example
-   * ```ts
-   * app.use('*', async (c, next) => {
-   *   c.set('message', 'Hono is hot!!')
-   *   await next()
-   * })
-   * ```
-   */
+  * `.set()` can set the value specified by the key.
+  *
+  * @see {@link https://hono.dev/docs/api/context#set-get}
+  *
+  * @example
+  * ```ts
+  * app.use('*', async (c, next) => {
+  *   c.set('message', 'Hono is hot!!')
+  *   await next()
+  * })
+  * ```
+  */
   set = (key, value) => {
     this.#var ??= /* @__PURE__ */ new Map();
     this.#var.set(key, value);
   };
   /**
-   * `.get()` can use the value specified by the key.
-   *
-   * @see {@link https://hono.dev/docs/api/context#set-get}
-   *
-   * @example
-   * ```ts
-   * app.get('/', (c) => {
-   *   const message = c.get('message')
-   *   return c.text(`The message is "${message}"`)
-   * })
-   * ```
-   */
+  * `.get()` can use the value specified by the key.
+  *
+  * @see {@link https://hono.dev/docs/api/context#set-get}
+  *
+  * @example
+  * ```ts
+  * app.get('/', (c) => {
+  *   const message = c.get('message')
+  *   return c.text(`The message is "${message}"`)
+  * })
+  * ```
+  */
   get = (key) => {
     return this.#var ? this.#var.get(key) : void 0;
   };
   /**
-   * `.var` can access the value of a variable.
-   *
-   * @see {@link https://hono.dev/docs/api/context#var}
-   *
-   * @example
-   * ```ts
-   * const result = c.var.client.oneMethod()
-   * ```
-   */
-  // c.var.propName is a read-only
+  * `.var` can access the value of a variable.
+  *
+  * @see {@link https://hono.dev/docs/api/context#var}
+  *
+  * @example
+  * ```ts
+  * const result = c.var.client.oneMethod()
+  * ```
+  */
   get var() {
-    if (!this.#var) {
-      return {};
-    }
+    if (!this.#var) return {};
     return Object.fromEntries(this.#var);
   }
   #newResponse(data, arg, headers) {
     let responseHeaders = this.#res ? new Headers(this.#res.headers) : this.#preparedHeaders;
     if (typeof arg === "object" && arg.headers) {
       responseHeaders ??= new Headers();
-      for (const [key, value] of new Headers(arg.headers)) {
-        if (key === "set-cookie") {
-          responseHeaders.append(key, value);
-        } else {
-          responseHeaders.set(key, value);
-        }
-      }
+      for (const [key, value] of new Headers(arg.headers)) if (key === "set-cookie") responseHeaders.append(key, value);
+      else responseHeaders.set(key, value);
     }
     if (headers) {
       if (!responseHeaders) {
         let count = 0;
-        for (const k in headers) {
-          if (++count > 1 || typeof headers[k] !== "string") {
-            responseHeaders = new Headers();
-            break;
-          }
+        for (const k in headers) if (++count > 1 || typeof headers[k] !== "string") {
+          responseHeaders = new Headers();
+          break;
         }
       }
-      if (responseHeaders) {
-        for (const k in headers) {
-          const v = headers[k];
-          if (typeof v === "string") {
-            responseHeaders.set(k, v);
-          } else {
-            responseHeaders.delete(k);
-            for (const v2 of v) {
-              responseHeaders.append(k, v2);
-            }
-          }
+      if (responseHeaders) for (const k in headers) {
+        const v = headers[k];
+        if (typeof v === "string") responseHeaders.set(k, v);
+        else {
+          responseHeaders.delete(k);
+          for (const v2 of v) responseHeaders.append(k, v2);
         }
       }
     }
@@ -41324,116 +41163,140 @@ var Context = class {
   }
   newResponse = (...args) => this.#newResponse(...args);
   /**
-   * `.body()` can return the HTTP response.
-   * You can set headers with `.header()` and set HTTP status code with `.status`.
-   * This can also be set in `.text()`, `.json()` and so on.
-   *
-   * @see {@link https://hono.dev/docs/api/context#body}
-   *
-   * @example
-   * ```ts
-   * app.get('/welcome', (c) => {
-   *   // Set headers
-   *   c.header('X-Message', 'Hello!')
-   *   c.header('Content-Type', 'text/plain')
-   *   // Set HTTP status code
-   *   c.status(201)
-   *
-   *   // Return the response body
-   *   return c.body('Thank you for coming')
-   * })
-   * ```
-   */
+  * `.body()` can return the HTTP response.
+  * You can set headers with `.header()` and set HTTP status code with `.status`.
+  * This can also be set in `.text()`, `.json()` and so on.
+  *
+  * @see {@link https://hono.dev/docs/api/context#body}
+  *
+  * @example
+  * ```ts
+  * app.get('/welcome', (c) => {
+  *   // Set headers
+  *   c.header('X-Message', 'Hello!')
+  *   c.header('Content-Type', 'text/plain')
+  *   // Set HTTP status code
+  *   c.status(201)
+  *
+  *   // Return the response body
+  *   return c.body('Thank you for coming')
+  * })
+  * ```
+  */
   body = (data, arg, headers) => this.#newResponse(data, arg, headers);
   /**
-   * `.text()` can render text as `Content-Type:text/plain`.
-   *
-   * @see {@link https://hono.dev/docs/api/context#text}
-   *
-   * @example
-   * ```ts
-   * app.get('/say', (c) => {
-   *   return c.text('Hello!')
-   * })
-   * ```
-   */
+  * `.text()` can render text as `Content-Type:text/plain`.
+  *
+  * @see {@link https://hono.dev/docs/api/context#text}
+  *
+  * @example
+  * ```ts
+  * app.get('/say', (c) => {
+  *   return c.text('Hello!')
+  * })
+  * ```
+  */
   text = (text4, arg, headers) => {
-    return !this.#preparedHeaders && !this.#status && !arg && !headers && !this.finalized ? new Response(text4) : this.#newResponse(
-      text4,
-      arg,
-      setDefaultContentType(TEXT_PLAIN, headers)
-    );
+    return !this.#preparedHeaders && !this.#status && !arg && !headers && !this.finalized ? new Response(text4) : this.#newResponse(text4, arg, setDefaultContentType(TEXT_PLAIN, headers));
   };
   /**
-   * `.json()` can render JSON as `Content-Type:application/json`.
-   *
-   * @see {@link https://hono.dev/docs/api/context#json}
-   *
-   * @example
-   * ```ts
-   * app.get('/api', (c) => {
-   *   return c.json({ message: 'Hello!' })
-   * })
-   * ```
-   */
+  * `.json()` can render JSON as `Content-Type:application/json`.
+  *
+  * @see {@link https://hono.dev/docs/api/context#json}
+  *
+  * @example
+  * ```ts
+  * app.get('/api', (c) => {
+  *   return c.json({ message: 'Hello!' })
+  * })
+  * ```
+  */
   json = (object2, arg, headers) => {
-    return this.#newResponse(
-      JSON.stringify(object2),
-      arg,
-      setDefaultContentType("application/json", headers)
-    );
+    return this.#newResponse(JSON.stringify(object2), arg, setDefaultContentType("application/json", headers));
   };
   html = (html, arg, headers) => {
     const res = (html2) => this.#newResponse(html2, arg, setDefaultContentType("text/html; charset=UTF-8", headers));
     return typeof html === "object" ? resolveCallback(html, HtmlEscapedCallbackPhase.Stringify, false, {}).then(res) : res(html);
   };
   /**
-   * `.redirect()` can Redirect, default status code is 302.
-   *
-   * @see {@link https://hono.dev/docs/api/context#redirect}
-   *
-   * @example
-   * ```ts
-   * app.get('/redirect', (c) => {
-   *   return c.redirect('/')
-   * })
-   * app.get('/redirect-permanently', (c) => {
-   *   return c.redirect('/', 301)
-   * })
-   * ```
-   */
+  * `.redirect()` can Redirect, default status code is 302.
+  *
+  * @see {@link https://hono.dev/docs/api/context#redirect}
+  *
+  * @example
+  * ```ts
+  * app.get('/redirect', (c) => {
+  *   return c.redirect('/')
+  * })
+  * app.get('/redirect-permanently', (c) => {
+  *   return c.redirect('/', 301)
+  * })
+  * ```
+  */
   redirect = (location, status) => {
     const locationString = String(location);
-    this.header(
-      "Location",
-      // Multibyes should be encoded
-      // eslint-disable-next-line no-control-regex
-      !/[^\x00-\xFF]/.test(locationString) ? locationString : encodeURI(locationString)
-    );
+    this.header("Location", !/[^\x00-\xFF]/.test(locationString) ? locationString : encodeURI(locationString));
     return this.newResponse(null, status ?? 302);
   };
   /**
-   * `.notFound()` can return the Not Found Response.
-   *
-   * @see {@link https://hono.dev/docs/api/context#notfound}
-   *
-   * @example
-   * ```ts
-   * app.get('/notfound', (c) => {
-   *   return c.notFound()
-   * })
-   * ```
-   */
+  * `.notFound()` can return the Not Found Response.
+  *
+  * @see {@link https://hono.dev/docs/api/context#notfound}
+  *
+  * @example
+  * ```ts
+  * app.get('/notfound', (c) => {
+  *   return c.notFound()
+  * })
+  * ```
+  */
   notFound = () => {
     this.#notFoundHandler ??= () => createResponseInstance();
     return this.#notFoundHandler(this);
   };
 };
 
+// node_modules/hono/dist/compose.js
+var compose = (middleware, onError, onNotFound) => {
+  return (context, next) => {
+    let index2 = -1;
+    return dispatch(0);
+    async function dispatch(i2) {
+      if (i2 <= index2) throw new Error("next() called multiple times");
+      index2 = i2;
+      let res;
+      let isError2 = false;
+      let handler;
+      if (middleware[i2]) {
+        handler = middleware[i2][0][0];
+        context.req.routeIndex = i2;
+      } else handler = i2 === middleware.length && next || void 0;
+      if (handler) try {
+        res = await handler(context, () => dispatch(i2 + 1));
+      } catch (err) {
+        if (err instanceof Error && onError) {
+          context.error = err;
+          res = await onError(err, context);
+          isError2 = true;
+        } else throw err;
+      }
+      else if (context.finalized === false && onNotFound) res = await onNotFound(context);
+      if (res && (context.finalized === false || isError2)) context.res = res;
+      return context;
+    }
+  };
+};
+
 // node_modules/hono/dist/router.js
-var METHOD_NAME_ALL = "ALL";
-var METHOD_NAME_ALL_LOWERCASE = "all";
-var METHODS = ["get", "post", "put", "delete", "options", "patch", "query"];
+var METHODS = [
+  "get",
+  "post",
+  "put",
+  "delete",
+  "options",
+  "patch",
+  "query"
+];
 var MESSAGE_MATCHER_IS_ALREADY_BUILT = "Can not add a route since the matcher is already built.";
 var UnsupportedPathError = class extends Error {
 };
@@ -41453,7 +41316,7 @@ var errorHandler = (err, c) => {
   console.error(err);
   return c.text("Internal Server Error", 500);
 };
-var Hono = class _Hono {
+var Hono = class Hono2 {
   get;
   post;
   put;
@@ -41464,27 +41327,19 @@ var Hono = class _Hono {
   all;
   on;
   use;
-  /*
-    This class is like an abstract class and does not have a router.
-    To use it, inherit the class and implement router in the constructor.
-  */
   router;
   getPath;
-  // Cannot use `#` because it requires visibility at JavaScript runtime.
   _basePath = "/";
   #path = "/";
   routes = [];
   constructor(options = {}) {
-    const allMethods = [...METHODS, METHOD_NAME_ALL_LOWERCASE];
-    allMethods.forEach((method) => {
+    [...METHODS, "all"].forEach((method) => {
       this[method] = (args1, ...args) => {
-        if (typeof args1 === "string") {
-          this.#path = args1;
-        } else {
-          this.#addRoute(method, this.#path, args1);
-        }
+        const methodName = method.toUpperCase();
+        if (typeof args1 === "string") this.#path = args1;
+        else this.#addRoute(methodName, this.#path, args1);
         args.forEach((handler) => {
-          this.#addRoute(method, this.#path, handler);
+          this.#addRoute(methodName, this.#path, handler);
         });
         return this;
       };
@@ -41493,22 +41348,20 @@ var Hono = class _Hono {
       for (const p of [path7].flat()) {
         this.#path = p;
         for (const m2 of [method].flat()) {
-          handlers.map((handler) => {
-            this.#addRoute(m2.toUpperCase(), this.#path, handler);
-          });
+          const methodName = m2.toUpperCase();
+          for (const handler of handlers) this.#addRoute(methodName, this.#path, handler);
         }
       }
       return this;
     };
     this.use = (arg1, ...handlers) => {
-      if (typeof arg1 === "string") {
-        this.#path = arg1;
-      } else {
+      if (typeof arg1 === "string") this.#path = arg1;
+      else {
         this.#path = "*";
         handlers.unshift(arg1);
       }
       handlers.forEach((handler) => {
-        this.#addRoute(METHOD_NAME_ALL, this.#path, handler);
+        this.#addRoute("ALL", this.#path, handler);
       });
       return this;
     };
@@ -41517,7 +41370,7 @@ var Hono = class _Hono {
     this.getPath = strict ?? true ? options.getPath ?? getPath : getPathNoStrict;
   }
   #clone() {
-    const clone2 = new _Hono({
+    const clone2 = new Hono2({
       router: this.router,
       getPath: this.getPath
     });
@@ -41527,33 +41380,31 @@ var Hono = class _Hono {
     return clone2;
   }
   #notFoundHandler = notFoundHandler;
-  // Cannot use `#` because it requires visibility at JavaScript runtime.
   errorHandler = errorHandler;
   /**
-   * `.route()` allows grouping other Hono instance in routes.
-   *
-   * @see {@link https://hono.dev/docs/api/routing#grouping}
-   *
-   * @param {string} path - base Path
-   * @param {Hono} app - other Hono instance
-   * @returns {Hono} routed Hono instance
-   *
-   * @example
-   * ```ts
-   * const app = new Hono()
-   * const app2 = new Hono()
-   *
-   * app2.get("/user", (c) => c.text("user"))
-   * app.route("/api", app2) // GET /api/user
-   * ```
-   */
+  * `.route()` allows grouping other Hono instance in routes.
+  *
+  * @see {@link https://hono.dev/docs/api/routing#grouping}
+  *
+  * @param {string} path - base Path
+  * @param {Hono} app - other Hono instance
+  * @returns {Hono} routed Hono instance
+  *
+  * @example
+  * ```ts
+  * const app = new Hono()
+  * const app2 = new Hono()
+  *
+  * app2.get("/user", (c) => c.text("user"))
+  * app.route("/api", app2) // GET /api/user
+  * ```
+  */
   route(path7, app2) {
     const subApp = this.basePath(path7);
     app2.routes.map((r2) => {
       let handler;
-      if (app2.errorHandler === errorHandler) {
-        handler = r2.handler;
-      } else {
+      if (app2.errorHandler === errorHandler) handler = r2.handler;
+      else {
         handler = async (c, next) => (await compose([], app2.errorHandler)(c, () => r2.handler(c, next))).res;
         handler[COMPOSED_HANDLER] = r2.handler;
       }
@@ -41562,107 +41413,105 @@ var Hono = class _Hono {
     return this;
   }
   /**
-   * `.basePath()` allows base paths to be specified.
-   *
-   * @see {@link https://hono.dev/docs/api/routing#base-path}
-   *
-   * @param {string} path - base Path
-   * @returns {Hono} changed Hono instance
-   *
-   * @example
-   * ```ts
-   * const api = new Hono().basePath('/api')
-   * ```
-   */
+  * `.basePath()` allows base paths to be specified.
+  *
+  * @see {@link https://hono.dev/docs/api/routing#base-path}
+  *
+  * @param {string} path - base Path
+  * @returns {Hono} changed Hono instance
+  *
+  * @example
+  * ```ts
+  * const api = new Hono().basePath('/api')
+  * ```
+  */
   basePath(path7) {
     const subApp = this.#clone();
     subApp._basePath = mergePath(this._basePath, path7);
     return subApp;
   }
   /**
-   * `.onError()` handles an error and returns a customized Response.
-   *
-   * @see {@link https://hono.dev/docs/api/hono#error-handling}
-   *
-   * @param {ErrorHandler} handler - request Handler for error
-   * @returns {Hono} changed Hono instance
-   *
-   * @example
-   * ```ts
-   * app.onError((err, c) => {
-   *   console.error(`${err}`)
-   *   return c.text('Custom Error Message', 500)
-   * })
-   * ```
-   */
+  * `.onError()` handles an error and returns a customized Response.
+  *
+  * @see {@link https://hono.dev/docs/api/hono#error-handling}
+  *
+  * @param {ErrorHandler} handler - request Handler for error
+  * @returns {Hono} changed Hono instance
+  *
+  * @example
+  * ```ts
+  * app.onError((err, c) => {
+  *   console.error(`${err}`)
+  *   return c.text('Custom Error Message', 500)
+  * })
+  * ```
+  */
   onError = (handler) => {
     this.errorHandler = handler;
     return this;
   };
   /**
-   * `.notFound()` allows you to customize a Not Found Response.
-   *
-   * @see {@link https://hono.dev/docs/api/hono#not-found}
-   *
-   * @param {NotFoundHandler} handler - request handler for not-found
-   * @returns {Hono} changed Hono instance
-   *
-   * @example
-   * ```ts
-   * app.notFound((c) => {
-   *   return c.text('Custom 404 Message', 404)
-   * })
-   * ```
-   */
+  * `.notFound()` allows you to customize a Not Found Response.
+  *
+  * @see {@link https://hono.dev/docs/api/hono#not-found}
+  *
+  * @param {NotFoundHandler} handler - request handler for not-found
+  * @returns {Hono} changed Hono instance
+  *
+  * @example
+  * ```ts
+  * app.notFound((c) => {
+  *   return c.text('Custom 404 Message', 404)
+  * })
+  * ```
+  */
   notFound = (handler) => {
     this.#notFoundHandler = handler;
     return this;
   };
   /**
-   * `.mount()` allows you to mount applications built with other frameworks into your Hono application.
-   *
-   * @see {@link https://hono.dev/docs/api/hono#mount}
-   *
-   * @param {string} path - base Path
-   * @param {Function} applicationHandler - other Request Handler
-   * @param {MountOptions} [options] - options of `.mount()`
-   * @returns {Hono} mounted Hono instance
-   *
-   * @example
-   * ```ts
-   * import { Router as IttyRouter } from 'itty-router'
-   * import { Hono } from 'hono'
-   * // Create itty-router application
-   * const ittyRouter = IttyRouter()
-   * // GET /itty-router/hello
-   * ittyRouter.get('/hello', () => new Response('Hello from itty-router'))
-   *
-   * const app = new Hono()
-   * app.mount('/itty-router', ittyRouter.handle)
-   * ```
-   *
-   * @example
-   * ```ts
-   * const app = new Hono()
-   * // Send the request to another application without modification.
-   * app.mount('/app', anotherApp, {
-   *   replaceRequest: (req) => req,
-   * })
-   * ```
-   */
+  * `.mount()` allows you to mount applications built with other frameworks into your Hono application.
+  *
+  * @deprecated Use `mount()` from `hono/mount` instead. `.mount()` will be removed in v5.
+  *
+  * @see {@link https://hono.dev/docs/api/hono#mount}
+  *
+  * @param {string} path - base Path
+  * @param {Function} applicationHandler - other Request Handler
+  * @param {MountOptions} [options] - options of `.mount()`
+  * @returns {Hono} mounted Hono instance
+  *
+  * @example
+  * ```ts
+  * import { Router as IttyRouter } from 'itty-router'
+  * import { Hono } from 'hono'
+  * // Create itty-router application
+  * const ittyRouter = IttyRouter()
+  * // GET /itty-router/hello
+  * ittyRouter.get('/hello', () => new Response('Hello from itty-router'))
+  *
+  * const app = new Hono()
+  * app.mount('/itty-router', ittyRouter.handle)
+  * ```
+  *
+  * @example
+  * ```ts
+  * const app = new Hono()
+  * // Send the request to another application without modification.
+  * app.mount('/app', anotherApp, {
+  *   replaceRequest: (req) => req,
+  * })
+  * ```
+  */
   mount(path7, applicationHandler, options) {
     let replaceRequest;
     let optionHandler;
     if (options) {
-      if (typeof options === "function") {
-        optionHandler = options;
-      } else {
+      if (typeof options === "function") optionHandler = options;
+      else {
         optionHandler = options.optionHandler;
-        if (options.replaceRequest === false) {
-          replaceRequest = (request2) => request2;
-        } else {
-          replaceRequest = options.replaceRequest;
-        }
+        if (options.replaceRequest === false) replaceRequest = (request2) => request2;
+        else replaceRequest = options.replaceRequest;
       }
     }
     const getOptions = optionHandler ? (c) => {
@@ -41687,16 +41536,13 @@ var Hono = class _Hono {
     })();
     const handler = async (c, next) => {
       const res = await applicationHandler(replaceRequest(c.req.raw), ...getOptions(c));
-      if (res) {
-        return res;
-      }
+      if (res) return res;
       await next();
     };
-    this.#addRoute(METHOD_NAME_ALL, mergePath(path7, "*"), handler);
+    this.#addRoute("ALL", mergePath(path7, "*"), handler);
     return this;
   }
   #addRoute(method, path7, handler, baseRoutePath) {
-    method = method.toUpperCase();
     path7 = mergePath(this._basePath, path7);
     const r2 = {
       basePath: baseRoutePath !== void 0 ? mergePath(this._basePath, baseRoutePath) : this._basePath,
@@ -41708,15 +41554,11 @@ var Hono = class _Hono {
     this.routes.push(r2);
   }
   #handleError(err, c) {
-    if (err instanceof Error) {
-      return this.errorHandler(err, c);
-    }
+    if (err instanceof Error) return this.errorHandler(err, c);
     throw err;
   }
   #dispatch(request2, executionCtx, env, method) {
-    if (method === "HEAD") {
-      return (async () => new Response(null, await this.#dispatch(request2, executionCtx, env, "GET")))();
-    }
+    if (method === "HEAD") return (async () => new Response(null, await this.#dispatch(request2, executionCtx, env, "GET")))();
     const path7 = this.getPath(request2, { env });
     const matchResult = this.router.match(method, path7);
     const c = new Context(request2, {
@@ -41735,19 +41577,13 @@ var Hono = class _Hono {
       } catch (err) {
         return this.#handleError(err, c);
       }
-      return res instanceof Promise ? res.then(
-        (resolved) => resolved || (c.finalized ? c.res : this.#notFoundHandler(c))
-      ).catch((err) => this.#handleError(err, c)) : res ?? this.#notFoundHandler(c);
+      return res instanceof Promise ? res.then((resolved) => resolved || (c.finalized ? c.res : this.#notFoundHandler(c))).catch((err) => this.#handleError(err, c)) : res ?? this.#notFoundHandler(c);
     }
     const composed = compose(matchResult[0], this.errorHandler, this.#notFoundHandler);
     return (async () => {
       try {
         const context = await composed(c);
-        if (!context.finalized) {
-          throw new Error(
-            "Context is not finalized. Did you forget to return a Response object or `await next()`?"
-          );
-        }
+        if (!context.finalized) throw new Error("Context is not finalized. Did you forget to return a Response object or `await next()`?");
         return context.res;
       } catch (err) {
         return this.#handleError(err, c);
@@ -41755,62 +41591,53 @@ var Hono = class _Hono {
     })();
   }
   /**
-   * `.fetch()` will be entry point of your app.
-   *
-   * @see {@link https://hono.dev/docs/api/hono#fetch}
-   *
-   * @param {Request} request - request Object of request
-   * @param {Env} env - env Object
-   * @param {ExecutionContext} executionCtx - context of execution
-   * @returns {Response | Promise<Response>} response of request
-   *
-   */
+  * `.fetch()` will be entry point of your app.
+  *
+  * @see {@link https://hono.dev/docs/api/hono#fetch}
+  *
+  * @param {Request} request - request Object of request
+  * @param {Env} env - env Object
+  * @param {ExecutionContext} executionCtx - context of execution
+  * @returns {Response | Promise<Response>} response of request
+  *
+  */
   fetch = (request2, ...rest) => {
     return this.#dispatch(request2, rest[1], rest[0], request2.method);
   };
   /**
-   * `.request()` is a useful method for testing.
-   * You can pass a URL or pathname to send a GET request.
-   * app will return a Response object.
-   * ```ts
-   * test('GET /hello is ok', async () => {
-   *   const res = await app.request('/hello')
-   *   expect(res.status).toBe(200)
-   * })
-   * ```
-   * @see https://hono.dev/docs/api/hono#request
-   */
+  * `.request()` is a useful method for testing.
+  * You can pass a URL or pathname to send a GET request.
+  * app will return a Response object.
+  * ```ts
+  * test('GET /hello is ok', async () => {
+  *   const res = await app.request('/hello')
+  *   expect(res.status).toBe(200)
+  * })
+  * ```
+  * @see https://hono.dev/docs/api/hono#request
+  */
   request = (input, requestInit, Env, executionCtx) => {
-    if (input instanceof Request) {
-      return this.fetch(requestInit ? new Request(input, requestInit) : input, Env, executionCtx);
-    }
+    if (input instanceof Request) return this.fetch(requestInit ? new Request(input, requestInit) : input, Env, executionCtx);
     input = input.toString();
-    return this.fetch(
-      new Request(
-        /^https?:\/\//.test(input) ? input : `http://localhost${mergePath("/", input)}`,
-        requestInit
-      ),
-      Env,
-      executionCtx
-    );
+    return this.fetch(new Request(/^https?:\/\//.test(input) ? input : `http://localhost${mergePath("/", input)}`, requestInit), Env, executionCtx);
   };
   /**
-   * `.fire()` automatically adds a global fetch event listener.
-   * This can be useful for environments that adhere to the Service Worker API, such as non-ES module Cloudflare Workers.
-   * @deprecated
-   * Use `fire` from `hono/service-worker` instead.
-   * ```ts
-   * import { Hono } from 'hono'
-   * import { fire } from 'hono/service-worker'
-   *
-   * const app = new Hono()
-   * // ...
-   * fire(app)
-   * ```
-   * @see https://hono.dev/docs/api/hono#fire
-   * @see https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API
-   * @see https://developers.cloudflare.com/workers/reference/migrate-to-module-workers/
-   */
+  * `.fire()` automatically adds a global fetch event listener.
+  * This can be useful for environments that adhere to the Service Worker API, such as non-ES module Cloudflare Workers.
+  * @deprecated
+  * Use `fire` from `hono/service-worker` instead.
+  * ```ts
+  * import { Hono } from 'hono'
+  * import { fire } from 'hono/service-worker'
+  *
+  * const app = new Hono()
+  * // ...
+  * fire(app)
+  * ```
+  * @see https://hono.dev/docs/api/hono#fire
+  * @see https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API
+  * @see https://developers.cloudflare.com/workers/reference/migrate-to-module-workers/
+  */
   fire = () => {
     addEventListener("fetch", (event) => {
       event.respondWith(this.#dispatch(event.request, event, void 0, event.request.method));
@@ -41818,91 +41645,77 @@ var Hono = class _Hono {
   };
 };
 
+// node_modules/hono/dist/router/utils.js
+var createNullObject = () => /* @__PURE__ */ Object.create(null);
+
 // node_modules/hono/dist/router/reg-exp-router/matcher.js
 var emptyParam = [];
 function match(method, path7) {
   const matchers = this.buildAllMatchers();
-  const match22 = ((method2, path22) => {
-    const matcher = matchers[method2] || matchers[METHOD_NAME_ALL];
-    const staticMatch = matcher[2][path22];
-    if (staticMatch) {
-      return staticMatch;
-    }
-    const match3 = path22.match(matcher[0]);
-    if (!match3) {
-      return [[], emptyParam];
-    }
-    const index2 = match3.indexOf("", 1);
-    return [matcher[1][index2], match3];
+  const match3 = ((method2, path8) => {
+    const matcher = matchers[method2] || matchers["ALL"];
+    const staticMatch = matcher[2][path8];
+    if (staticMatch) return staticMatch;
+    const match4 = path8.match(matcher[0]);
+    if (!match4) return [[], emptyParam];
+    const index2 = match4.indexOf("", 1);
+    return [matcher[1][index2], match4];
   });
-  this.match = match22;
-  return match22(method, path7);
+  this.match = match3;
+  return match3(method, path7);
 }
 
 // node_modules/hono/dist/router/reg-exp-router/node.js
 var LABEL_REG_EXP_STR = "[^/]+";
-var ONLY_WILDCARD_REG_EXP_STR = ".*";
 var TAIL_WILDCARD_REG_EXP_STR = "(?:|/.*)";
 var PATH_ERROR = /* @__PURE__ */ Symbol();
-var regExpMetaChars = new Set(".\\+*[^]$()");
+var regExpMetaChars = /* @__PURE__ */ new Set(".\\+*[^]$()");
 function compareKey(a, b) {
-  if (a.length === 1) {
-    return b.length === 1 ? a < b ? -1 : 1 : -1;
-  }
-  if (b.length === 1) {
-    return 1;
-  }
-  if (a === ONLY_WILDCARD_REG_EXP_STR || a === TAIL_WILDCARD_REG_EXP_STR) {
-    return b === TAIL_WILDCARD_REG_EXP_STR ? -1 : 1;
-  } else if (b === ONLY_WILDCARD_REG_EXP_STR || b === TAIL_WILDCARD_REG_EXP_STR) {
-    return -1;
-  }
-  if (a === LABEL_REG_EXP_STR) {
-    return 1;
-  } else if (b === LABEL_REG_EXP_STR) {
-    return -1;
-  }
+  if (a.length === 1) return b.length === 1 ? a < b ? -1 : 1 : -1;
+  if (b.length === 1) return 1;
+  if (a === ".*" || a === "(?:|/.*)") return b === "(?:|/.*)" ? -1 : 1;
+  else if (b === ".*" || b === "(?:|/.*)") return -1;
+  if (a === "[^/]+") return 1;
+  else if (b === "[^/]+") return -1;
   return a.length === b.length ? a < b ? -1 : 1 : b.length - a.length;
 }
-var Node = class _Node {
-  // handler index of a dynamic path, or -1 for a static path terminal
+var Node = class Node2 {
   #index;
   #varIndex;
-  #children = /* @__PURE__ */ Object.create(null);
+  #children = createNullObject();
   insert(tokens, index2, paramMap, context, isStatic) {
     let node = this;
     for (let i2 = 0, len = tokens.length; i2 < len; i2++) {
       const token = tokens[i2];
-      const pattern = token.length === 1 ? token === "*" ? i2 === len - 1 ? ["", "", ONLY_WILDCARD_REG_EXP_STR] : ["", "", LABEL_REG_EXP_STR] : null : token === "/*" ? ["", "", TAIL_WILDCARD_REG_EXP_STR] : token.match(/^\:([^\{\}]+)(?:\{(.+)\})?$/);
+      const pattern = token.length === 1 ? token === "*" ? i2 === len - 1 ? [
+        "",
+        "",
+        ".*"
+      ] : [
+        "",
+        "",
+        LABEL_REG_EXP_STR
+      ] : null : token === "/*" ? [
+        "",
+        "",
+        TAIL_WILDCARD_REG_EXP_STR
+      ] : token.match(/^\:([^\{\}]+)(?:\{(.+)\})?$/);
       let nextNode;
       if (pattern) {
         const name = pattern[1];
-        let regexpStr = pattern[2] || LABEL_REG_EXP_STR;
+        let regexpStr = pattern[2] || "[^/]+";
         if (name && pattern[2]) {
-          if (regexpStr === ".*") {
-            throw PATH_ERROR;
-          }
+          if (regexpStr === ".*") throw PATH_ERROR;
           regexpStr = regexpStr.replace(/^\((?!\?:)(?=[^)]+\)$)/, "(?:");
-          if (/\((?!\?:)/.test(regexpStr)) {
-            throw PATH_ERROR;
-          }
-          if (regexpStr.length === 1 && regExpMetaChars.has(regexpStr)) {
-            throw PATH_ERROR;
-          }
+          if (/\((?!\?:)/.test(regexpStr)) throw PATH_ERROR;
+          if (regexpStr.length === 1 && regExpMetaChars.has(regexpStr)) throw PATH_ERROR;
         }
         nextNode = node.#children[regexpStr];
         if (!nextNode) {
-          if (regexpStr !== ONLY_WILDCARD_REG_EXP_STR && regexpStr !== TAIL_WILDCARD_REG_EXP_STR) {
-            for (const k in node.#children) {
-              if (
-                // a single-char pattern coexists with single-char literals as a literal does
-                (regexpStr.length > 1 || k.length > 1) && k !== ONLY_WILDCARD_REG_EXP_STR && k !== TAIL_WILDCARD_REG_EXP_STR
-              ) {
-                throw PATH_ERROR;
-              }
-            }
+          if (regexpStr !== ".*" && regexpStr !== "(?:|/.*)") {
+            for (const k in node.#children) if ((regexpStr.length > 1 || k.length > 1) && k !== ".*" && k !== "(?:|/.*)") throw PATH_ERROR;
           }
-          nextNode = node.#children[regexpStr] = new _Node();
+          nextNode = node.#children[regexpStr] = new Node2();
         }
         if (name !== "") {
           nextNode.#varIndex ??= context.varIndex++;
@@ -41911,37 +41724,24 @@ var Node = class _Node {
       } else {
         nextNode = node.#children[token];
         if (!nextNode) {
-          for (const k in node.#children) {
-            if (k.length > 1 && k !== ONLY_WILDCARD_REG_EXP_STR && k !== TAIL_WILDCARD_REG_EXP_STR) {
-              throw PATH_ERROR;
-            }
-          }
-          nextNode = node.#children[token] = new _Node();
+          for (const k in node.#children) if (k.length > 1 && k !== ".*" && k !== "(?:|/.*)") throw PATH_ERROR;
+          nextNode = node.#children[token] = new Node2();
         }
       }
       node = nextNode;
     }
-    if (node.#index !== void 0) {
-      throw PATH_ERROR;
-    }
+    if (node.#index !== void 0) throw PATH_ERROR;
     node.#index = isStatic ? -1 : index2;
   }
   buildRegExpStr() {
-    const childKeys = Object.keys(this.#children).sort(compareKey);
-    const strList = childKeys.map((k) => {
+    const strList = Object.keys(this.#children).sort(compareKey).map((k) => {
       const c = this.#children[k];
       const childStr = c.buildRegExpStr();
       return childStr === "" ? "" : (typeof c.#varIndex === "number" ? `(${k})@${c.#varIndex}` : regExpMetaChars.has(k) ? `\\${k}` : k) + childStr;
     }).filter(Boolean);
-    if (typeof this.#index === "number" && this.#index !== -1) {
-      strList.unshift(`#${this.#index}`);
-    }
-    if (strList.length === 0) {
-      return "";
-    }
-    if (strList.length === 1) {
-      return strList[0];
-    }
+    if (typeof this.#index === "number" && this.#index !== -1) strList.unshift(`#${this.#index}`);
+    if (strList.length === 0) return "";
+    if (strList.length === 1) return strList[0];
     return "(?:" + strList.join("|") + ")";
   }
 };
@@ -41951,8 +41751,7 @@ var Trie = class {
   #context = { varIndex: 0 };
   #root = new Node();
   #index = 0;
-  // dynamic path -> [handler index, param assoc]; static paths are not registered
-  paths = /* @__PURE__ */ Object.create(null);
+  paths = createNullObject();
   insert(path7, isStatic) {
     if (isStatic) {
       this.#root.insert(path7.split(""), 0, [], this.#context, true);
@@ -41970,18 +41769,14 @@ var Trie = class {
         replaced = true;
         return mark;
       });
-      if (!replaced) {
-        break;
-      }
+      if (!replaced) break;
     }
     const tokens = markedPath.match(/(?::[^\/]+)|(?:\/\*$)|./g) || [];
     for (let i2 = groups.length - 1; i2 >= 0; i2--) {
       const [mark] = groups[i2];
-      for (let j = tokens.length - 1; j >= 0; j--) {
-        if (tokens[j].indexOf(mark) !== -1) {
-          tokens[j] = tokens[j].replace(mark, groups[i2][1]);
-          break;
-        }
+      for (let j = tokens.length - 1; j >= 0; j--) if (tokens[j].indexOf(mark) !== -1) {
+        tokens[j] = tokens[j].replace(mark, groups[i2][1]);
+        break;
       }
     }
     this.#root.insert(tokens, this.#index, paramAssoc, this.#context, false);
@@ -41989,9 +41784,11 @@ var Trie = class {
   }
   buildRegExp() {
     let regexp = this.#root.buildRegExpStr();
-    if (regexp === "") {
-      return [/^$/, [], []];
-    }
+    if (regexp === "") return [
+      /^$/,
+      [],
+      []
+    ];
     let captureIndex = 0;
     const indexReplacementMap = [];
     const paramReplacementMap = [];
@@ -42006,33 +41803,21 @@ var Trie = class {
       }
       return "";
     });
-    return [new RegExp(`^${regexp}`), indexReplacementMap, paramReplacementMap];
+    return [
+      new RegExp(`^${regexp}`),
+      indexReplacementMap,
+      paramReplacementMap
+    ];
   }
 };
 
 // node_modules/hono/dist/router/reg-exp-router/router.js
-var wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
+var wildcardRegExpCache = createNullObject();
 function buildWildcardRegExp(path7) {
-  return wildcardRegExpCache[path7] ??= new RegExp(
-    path7 === "*" ? "" : `^${path7.replace(
-      /\/\*$|([.\\+*[^\]$()])/g,
-      (_, metaChar) => metaChar ? `\\${metaChar}` : "(?:|/.*)"
-    )}$`
-  );
-}
-function clearWildcardRegExpCache() {
-  wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
+  return wildcardRegExpCache[path7] ??= new RegExp(`^${path7.replace(/\/:[^/{}]+(?:\{\[\^\/]\+})?(?=[/{]|$)|\/?\*$|([.\\+*[^\]$()?{}|])/g, (match3, metaChar) => metaChar ? `\\${metaChar}` : match3 === "/*" ? TAIL_WILDCARD_REG_EXP_STR : match3 === "*" ? ".*" : `/:${LABEL_REG_EXP_STR}`)}$`);
 }
 function findMiddleware(middleware, path7) {
-  if (!middleware) {
-    return void 0;
-  }
-  for (const k of Object.keys(middleware).sort((a, b) => b.length - a.length)) {
-    if (buildWildcardRegExp(k).test(path7)) {
-      return [...middleware[k]];
-    }
-  }
-  return void 0;
+  for (const k of Object.keys(middleware).sort((a, b) => b.length - a.length)) if (buildWildcardRegExp(k).test(path7)) return [...middleware[k]];
 }
 var RegExpRouter = class {
   name = "RegExpRouter";
@@ -42040,9 +41825,9 @@ var RegExpRouter = class {
   #routes;
   #tries;
   constructor() {
-    this.#middleware = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
-    this.#routes = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
-    this.#tries = { [METHOD_NAME_ALL]: new Trie() };
+    this.#middleware = { ["ALL"]: createNullObject() };
+    this.#routes = { ["ALL"]: createNullObject() };
+    this.#tries = { ["ALL"]: new Trie() };
   }
   #insertPath(method, path7) {
     try {
@@ -42054,117 +41839,69 @@ var RegExpRouter = class {
   add(method, path7, handler) {
     const middleware = this.#middleware;
     const routes = this.#routes;
-    if (!middleware || !routes) {
-      throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
-    }
+    if (!middleware) throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
     if (!middleware[method]) {
       this.#tries[method] = new Trie();
-      [middleware, routes].forEach((handlerMap) => {
-        handlerMap[method] = /* @__PURE__ */ Object.create(null);
-        Object.keys(handlerMap[METHOD_NAME_ALL]).forEach((p) => {
-          handlerMap[method][p] = [...handlerMap[METHOD_NAME_ALL][p]];
+      for (const handlerMap of [middleware, routes]) {
+        handlerMap[method] = createNullObject();
+        for (const p in handlerMap["ALL"]) {
+          handlerMap[method][p] = [...handlerMap["ALL"][p]];
           this.#insertPath(method, p);
-        });
-      });
+        }
+      }
     }
-    if (path7 === "/*") {
-      path7 = "*";
-    }
-    const paramCount = (path7.match(/\/:/g) || []).length;
+    if (path7 === "/*") path7 = "*";
+    const methods = method === "ALL" ? Object.keys(middleware) : [method];
     if (/\*$/.test(path7)) {
       const re = buildWildcardRegExp(path7);
-      Object.keys(middleware).forEach((m2) => {
-        if ((method === METHOD_NAME_ALL || method === m2) && !middleware[m2][path7]) {
-          this.#insertPath(m2, path7);
-          middleware[m2][path7] = findMiddleware(middleware[m2], path7) || findMiddleware(middleware[METHOD_NAME_ALL], path7) || [];
-        }
-      });
-      Object.keys(middleware).forEach((m2) => {
-        if (method === METHOD_NAME_ALL || method === m2) {
-          Object.keys(middleware[m2]).forEach((p) => {
-            re.test(p) && middleware[m2][p].push([handler, paramCount]);
-          });
-        }
-      });
-      Object.keys(routes).forEach((m2) => {
-        if (method === METHOD_NAME_ALL || method === m2) {
-          Object.keys(routes[m2]).forEach(
-            (p) => re.test(p) && routes[m2][p].push([handler, paramCount])
-          );
-        }
-      });
+      for (const m2 of methods) if (!middleware[m2][path7]) {
+        this.#insertPath(m2, path7);
+        middleware[m2][path7] = findMiddleware(middleware[m2], path7) || findMiddleware(middleware["ALL"], path7) || [];
+      }
+      for (const handlerMap of [middleware, routes]) for (const m2 of methods) for (const p in handlerMap[m2]) re.test(p) && handlerMap[m2][p].push([handler, path7]);
       return;
     }
     const paths = checkOptionalParameter(path7) || [path7];
-    for (let i2 = 0, len = paths.length; i2 < len; i2++) {
-      const path22 = paths[i2];
-      Object.keys(routes).forEach((m2) => {
-        if (method === METHOD_NAME_ALL || method === m2) {
-          if (!routes[m2][path22]) {
-            this.#insertPath(m2, path22);
-            routes[m2][path22] = [
-              ...findMiddleware(middleware[m2], path22) || findMiddleware(middleware[METHOD_NAME_ALL], path22) || []
-            ];
-          }
-          routes[m2][path22].push([handler, paramCount - len + i2 + 1]);
-        }
-      });
+    for (const path8 of paths) for (const m2 of methods) {
+      if (!routes[m2][path8]) {
+        this.#insertPath(m2, path8);
+        routes[m2][path8] = findMiddleware(middleware[m2], path8) || findMiddleware(middleware["ALL"], path8) || [];
+      }
+      routes[m2][path8].push([handler, path8]);
     }
   }
   match = match;
   buildAllMatchers() {
-    const matchers = /* @__PURE__ */ Object.create(null);
-    Object.keys(this.#routes).concat(Object.keys(this.#middleware)).forEach((method) => {
-      matchers[method] ||= this.#buildMatcher(method);
-    });
+    const matchers = createNullObject();
+    for (const method of Object.keys(this.#routes)) matchers[method] = this.#buildMatcher(method);
     this.#middleware = this.#routes = this.#tries = void 0;
-    clearWildcardRegExpCache();
+    wildcardRegExpCache = createNullObject();
     return matchers;
   }
   #buildMatcher(method) {
     const middleware = this.#middleware[method];
     const routes = this.#routes[method];
     const trie = this.#tries[method];
-    const staticMap = /* @__PURE__ */ Object.create(null);
+    const staticMap = createNullObject();
     const handlerData = [];
-    [middleware, routes].forEach((r2) => {
-      for (const path7 in r2) {
-        const handlers = r2[path7];
-        const pathData = trie.paths[path7];
-        if (!pathData) {
-          staticMap[path7] = [handlers.map(([h2]) => [h2, /* @__PURE__ */ Object.create(null)]), emptyParam];
-          continue;
-        }
-        const paramAssoc = pathData[1];
-        handlerData[pathData[0]] = handlers.map(([h2, paramCount]) => {
-          const paramIndexMap = /* @__PURE__ */ Object.create(null);
-          paramCount -= 1;
-          for (; paramCount >= 0; paramCount--) {
-            const [key, value] = paramAssoc[paramCount];
-            paramIndexMap[key] = value;
-          }
-          return [h2, paramIndexMap];
-        });
-      }
-    });
     const [regexp, indexReplacementMap, paramReplacementMap] = trie.buildRegExp();
-    for (let i2 = 0, len = handlerData.length; i2 < len; i2++) {
-      for (let j = 0, len2 = handlerData[i2].length; j < len2; j++) {
-        const map = handlerData[i2][j]?.[1];
-        if (!map) {
-          continue;
-        }
-        const keys = Object.keys(map);
-        for (let k = 0, len3 = keys.length; k < len3; k++) {
-          map[keys[k]] = paramReplacementMap[map[keys[k]]];
-        }
+    for (const r2 of [middleware, routes]) for (const path7 in r2) {
+      const handlers = r2[path7];
+      const pathData = trie.paths[path7];
+      if (!pathData) {
+        staticMap[path7] = [handlers.map(([h2]) => [h2, createNullObject()]), emptyParam];
+        continue;
       }
+      handlerData[pathData[0]] = handlers.map(([h2, handlerPath]) => [h2, trie.paths[handlerPath][1].reduceRight((map, [key], i2) => {
+        map[key] = paramReplacementMap[pathData[1][i2][1]];
+        return map;
+      }, createNullObject())]);
     }
-    const handlerMap = [];
-    for (const i2 in indexReplacementMap) {
-      handlerMap[i2] = handlerData[indexReplacementMap[i2]];
-    }
-    return [regexp, handlerMap, staticMap];
+    return [
+      regexp,
+      indexReplacementMap.map((i2) => handlerData[i2]),
+      staticMap
+    ];
   }
 };
 
@@ -42177,15 +41914,15 @@ var SmartRouter = class {
     this.#routers = init.routers;
   }
   add(method, path7, handler) {
-    if (!this.#routes) {
-      throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
-    }
-    this.#routes.push([method, path7, handler]);
+    if (!this.#routes) throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
+    this.#routes.push([
+      method,
+      path7,
+      handler
+    ]);
   }
   match(method, path7) {
-    if (!this.#routes) {
-      throw new Error("Fatal error");
-    }
+    if (!this.#routes) throw new Error("Fatal error");
     const routers = this.#routers;
     const routes = this.#routes;
     const len = routers.length;
@@ -42194,14 +41931,10 @@ var SmartRouter = class {
     for (; i2 < len; i2++) {
       const router = routers[i2];
       try {
-        for (let i22 = 0, len2 = routes.length; i22 < len2; i22++) {
-          router.add(...routes[i22]);
-        }
+        for (let i3 = 0, len2 = routes.length; i3 < len2; i3++) router.add(...routes[i3]);
         res = router.match(method, path7);
       } catch (e2) {
-        if (e2 instanceof UnsupportedPathError) {
-          continue;
-        }
+        if (e2 instanceof UnsupportedPathError) continue;
         throw e2;
       }
       this.match = router.match.bind(router);
@@ -42209,92 +41942,59 @@ var SmartRouter = class {
       this.#routes = void 0;
       break;
     }
-    if (i2 === len) {
-      throw new Error("Fatal error");
-    }
+    if (i2 === len) throw new Error("Fatal error");
     this.name = `SmartRouter + ${this.activeRouter.name}`;
     return res;
   }
   get activeRouter() {
-    if (this.#routes || this.#routers.length !== 1) {
-      throw new Error("No active router has been determined yet.");
-    }
+    if (this.#routes || this.#routers.length !== 1) throw new Error("No active router has been determined yet.");
     return this.#routers[0];
   }
 };
 
 // node_modules/hono/dist/router/trie-router/node.js
-var emptyParams = /* @__PURE__ */ Object.create(null);
-var hasChildren = (children) => {
-  for (const _ in children) {
-    return true;
-  }
-  return false;
-};
-var Node2 = class _Node2 {
-  #methods;
-  #children;
-  #patterns;
-  #order = 0;
+var emptyParams = createNullObject();
+var order = 0;
+var Node3 = class Node4 {
+  #methods = [];
+  #children = createNullObject();
+  #patterns = [];
+  #pattern;
   #params = emptyParams;
-  constructor(method, handler, children) {
-    this.#children = children || /* @__PURE__ */ Object.create(null);
-    this.#methods = [];
-    if (method && handler) {
-      const m2 = /* @__PURE__ */ Object.create(null);
-      m2[method] = { handler, possibleKeys: [], score: 0 };
-      this.#methods = [m2];
-    }
-    this.#patterns = [];
-  }
   insert(method, path7, handler) {
-    this.#order = ++this.#order;
     let curNode = this;
     const parts = splitRoutingPath(path7);
-    const possibleKeys = [];
-    for (let i2 = 0, len = parts.length; i2 < len; i2++) {
-      const p = parts[i2];
-      const nextP = parts[i2 + 1];
-      const pattern = getPattern(p, nextP);
-      const key = Array.isArray(pattern) ? pattern[0] : p;
-      if (key in curNode.#children) {
-        curNode = curNode.#children[key];
-        if (pattern) {
-          possibleKeys.push(pattern[1]);
-        }
-        continue;
+    const possibleKeys = /* @__PURE__ */ new Set();
+    let i2 = 0;
+    for (const p of parts) {
+      const nextP = parts[++i2];
+      const pattern = getPattern(p, nextP) || (nextP === void 0 && p && p.indexOf("*") === p.length - 1 ? p : null);
+      const isParam = Array.isArray(pattern);
+      const key = isParam ? pattern[0] : pattern || p;
+      const child = curNode.#children[key] ||= new Node4();
+      if (pattern && !child.#pattern) {
+        child.#pattern = pattern;
+        curNode.#patterns.push(child);
       }
-      curNode.#children[key] = new _Node2();
-      if (pattern) {
-        curNode.#patterns.push(pattern);
-        possibleKeys.push(pattern[1]);
-      }
-      curNode = curNode.#children[key];
+      curNode = child;
+      if (isParam) possibleKeys.add(pattern[1]);
     }
-    curNode.#methods.push({
-      [method]: {
-        handler,
-        possibleKeys: possibleKeys.filter((v, i2, a) => a.indexOf(v) === i2),
-        score: this.#order
-      }
-    });
-    return curNode;
+    curNode.#methods.push({ [method]: {
+      handler,
+      possibleKeys: [...possibleKeys],
+      score: ++order
+    } });
   }
   #pushHandlerSets(handlerSets, node, method, nodeParams, params) {
     for (let i2 = 0, len = node.#methods.length; i2 < len; i2++) {
       const m2 = node.#methods[i2];
-      const handlerSet = m2[method] || m2[METHOD_NAME_ALL];
-      const processedSet = {};
-      if (handlerSet !== void 0) {
-        handlerSet.params = /* @__PURE__ */ Object.create(null);
+      const handlerSet = m2[method] || m2["ALL"];
+      if (handlerSet) {
+        handlerSet.params = createNullObject();
         handlerSets.push(handlerSet);
-        if (nodeParams !== emptyParams || params && params !== emptyParams) {
-          for (let i22 = 0, len2 = handlerSet.possibleKeys.length; i22 < len2; i22++) {
-            const key = handlerSet.possibleKeys[i22];
-            const processed = processedSet[handlerSet.score];
-            handlerSet.params[key] = params?.[key] && !processed ? params[key] : nodeParams[key] ?? params?.[key];
-            processedSet[handlerSet.score] = true;
-          }
+        for (let i3 = 0, len2 = handlerSet.possibleKeys.length; i3 < len2; i3++) {
+          const key = handlerSet.possibleKeys[i3];
+          handlerSet.params[key] = params?.[key] && !i3 ? params[key] : nodeParams[key] ?? params?.[key];
         }
       }
     }
@@ -42302,8 +42002,7 @@ var Node2 = class _Node2 {
   search(method, path7) {
     const handlerSets = [];
     this.#params = emptyParams;
-    const curNode = this;
-    let curNodes = [curNode];
+    let curNodes = [this];
     const parts = splitPath(path7);
     const curNodesQueue = [];
     const len = parts.length;
@@ -42318,59 +42017,45 @@ var Node2 = class _Node2 {
         if (nextNode) {
           nextNode.#params = node.#params;
           if (isLast) {
-            if (nextNode.#children["*"]) {
-              this.#pushHandlerSets(handlerSets, nextNode.#children["*"], method, node.#params);
-            }
+            if (nextNode.#children["*"]) this.#pushHandlerSets(handlerSets, nextNode.#children["*"], method, node.#params);
             this.#pushHandlerSets(handlerSets, nextNode, method, node.#params);
-          } else {
-            tempNodes.push(nextNode);
-          }
+          } else tempNodes.push(nextNode);
         }
-        for (let k = 0, len3 = node.#patterns.length; k < len3; k++) {
-          const pattern = node.#patterns[k];
+        for (const child of node.#patterns) {
+          const pattern = child.#pattern;
           const params = node.#params === emptyParams ? {} : { ...node.#params };
-          if (pattern === "*") {
-            const astNode = node.#children["*"];
-            if (astNode) {
-              this.#pushHandlerSets(handlerSets, astNode, method, node.#params);
-              astNode.#params = params;
-              tempNodes.push(astNode);
+          if (typeof pattern === "string") {
+            if (pattern === "*" || part.startsWith(pattern.slice(0, -1))) {
+              this.#pushHandlerSets(handlerSets, child, method, node.#params);
+              if (pattern === "*") {
+                child.#params = params;
+                tempNodes.push(child);
+              }
             }
             continue;
           }
-          const [key, name, matcher] = pattern;
-          if (!part && !(matcher instanceof RegExp)) {
-            continue;
-          }
-          const child = node.#children[key];
-          if (matcher instanceof RegExp) {
-            if (partOffsets === null) {
-              partOffsets = new Array(len);
+          const [, name, matcher] = pattern;
+          if (!part && matcher === true) continue;
+          if (matcher !== true) {
+            if (!partOffsets) {
+              partOffsets = [];
               let offset = path7[0] === "/" ? 1 : 0;
               for (let p = 0; p < len; p++) {
                 partOffsets[p] = offset;
                 offset += parts[p].length + 1;
               }
             }
-            const restPathString = path7.substring(partOffsets[i2]);
+            const restPathString = path7.slice(partOffsets[i2]);
             const m2 = matcher.exec(restPathString);
             if (m2) {
               params[name] = m2[0];
               this.#pushHandlerSets(handlerSets, child, method, node.#params, params);
-              if (m2[0].length === restPathString.length && child.#children["*"]) {
-                this.#pushHandlerSets(
-                  handlerSets,
-                  child.#children["*"],
-                  method,
-                  node.#params,
-                  params
-                );
-              }
-              if (hasChildren(child.#children)) {
+              if (m2[0].length === restPathString.length && child.#children["*"]) this.#pushHandlerSets(handlerSets, child.#children["*"], method, node.#params, params);
+              for (const _ in child.#children) {
                 child.#params = params;
-                const componentCount = m2[0].match(/\//)?.length ?? 0;
-                const targetCurNodes = curNodesQueue[componentCount] ||= [];
-                targetCurNodes.push(child);
+                const componentCount = m2[0].match(/\//g)?.length ?? 0;
+                (curNodesQueue[componentCount] ||= []).push(child);
+                break;
               }
               continue;
             }
@@ -42379,15 +42064,7 @@ var Node2 = class _Node2 {
             params[name] = part;
             if (isLast) {
               this.#pushHandlerSets(handlerSets, child, method, params, node.#params);
-              if (child.#children["*"]) {
-                this.#pushHandlerSets(
-                  handlerSets,
-                  child.#children["*"],
-                  method,
-                  params,
-                  node.#params
-                );
-              }
+              if (child.#children["*"]) this.#pushHandlerSets(handlerSets, child.#children["*"], method, params, node.#params);
             } else {
               child.#params = params;
               tempNodes.push(child);
@@ -42398,11 +42075,9 @@ var Node2 = class _Node2 {
       const shifted = curNodesQueue.shift();
       curNodes = shifted ? tempNodes.concat(shifted) : tempNodes;
     }
-    if (handlerSets.length > 1) {
-      handlerSets.sort((a, b) => {
-        return a.score - b.score;
-      });
-    }
+    if (handlerSets[1]) handlerSets.sort((a, b) => {
+      return a.score - b.score;
+    });
     return [handlerSets.map(({ handler, params }) => [handler, params])];
   }
 };
@@ -42410,19 +42085,9 @@ var Node2 = class _Node2 {
 // node_modules/hono/dist/router/trie-router/router.js
 var TrieRouter = class {
   name = "TrieRouter";
-  #node;
-  constructor() {
-    this.#node = new Node2();
-  }
+  #node = new Node3();
   add(method, path7, handler) {
-    const results = checkOptionalParameter(path7);
-    if (results) {
-      for (let i2 = 0, len = results.length; i2 < len; i2++) {
-        this.#node.insert(method, results[i2], handler);
-      }
-      return;
-    }
-    this.#node.insert(method, path7, handler);
+    for (const result of checkOptionalParameter(path7) || [path7]) this.#node.insert(method, result, handler);
   }
   match(method, path7) {
     return this.#node.search(method, path7);
@@ -42430,17 +42095,15 @@ var TrieRouter = class {
 };
 
 // node_modules/hono/dist/hono.js
-var Hono2 = class extends Hono {
+var Hono3 = class extends Hono {
   /**
-   * Creates an instance of the Hono class.
-   *
-   * @param options - Optional configuration options for the Hono instance.
-   */
+  * Creates an instance of the Hono class.
+  *
+  * @param options - Optional configuration options for the Hono instance.
+  */
   constructor(options = {}) {
     super(options);
-    this.router = options.router ?? new SmartRouter({
-      routers: [new RegExpRouter(), new TrieRouter()]
-    });
+    this.router = options.router ?? new SmartRouter({ routers: [new RegExpRouter(), new TrieRouter()] });
   }
 };
 
@@ -42448,67 +42111,55 @@ var Hono2 = class extends Hono {
 var cors = (options) => {
   const opts = {
     origin: "*",
-    allowMethods: ["GET", "HEAD", "PUT", "POST", "DELETE", "PATCH", "QUERY"],
+    allowMethods: [
+      "GET",
+      "HEAD",
+      "PUT",
+      "POST",
+      "DELETE",
+      "PATCH",
+      "QUERY"
+    ],
     allowHeaders: [],
     exposeHeaders: [],
     ...options
   };
+  const exposeHeadersStr = opts.exposeHeaders?.length ? opts.exposeHeaders.join(",") : void 0;
+  const allowHeadersStr = opts.allowHeaders?.length ? opts.allowHeaders.join(",") : void 0;
   const findAllowOrigin = ((optsOrigin) => {
     if (typeof optsOrigin === "string") {
-      if (optsOrigin === "*") {
-        return () => optsOrigin;
-      } else {
-        return (origin) => optsOrigin === origin ? origin : null;
-      }
-    } else if (typeof optsOrigin === "function") {
-      return optsOrigin;
-    } else {
-      return (origin) => optsOrigin.includes(origin) ? origin : null;
-    }
+      if (optsOrigin === "*") return () => optsOrigin;
+      else return (origin) => optsOrigin === origin ? origin : null;
+    } else if (typeof optsOrigin === "function") return optsOrigin;
+    else return (origin) => optsOrigin.includes(origin) ? origin : null;
   })(opts.origin);
   const findAllowMethods = ((optsAllowMethods) => {
-    if (typeof optsAllowMethods === "function") {
-      return optsAllowMethods;
-    } else if (Array.isArray(optsAllowMethods)) {
-      return () => optsAllowMethods;
-    } else {
-      return () => [];
-    }
+    if (typeof optsAllowMethods === "function") return async (origin, c) => (await optsAllowMethods(origin, c)).join(",");
+    else if (Array.isArray(optsAllowMethods)) {
+      const methodsStr = optsAllowMethods.join(",");
+      return () => methodsStr;
+    } else return () => "";
   })(opts.allowMethods);
   return async function cors2(c, next) {
     function set(key, value) {
       c.res.headers.set(key, value);
     }
     const allowOrigin = await findAllowOrigin(c.req.header("origin") || "", c);
-    if (allowOrigin) {
-      set("Access-Control-Allow-Origin", allowOrigin);
-    }
-    if (opts.credentials) {
-      set("Access-Control-Allow-Credentials", "true");
-    }
-    if (opts.exposeHeaders?.length) {
-      set("Access-Control-Expose-Headers", opts.exposeHeaders.join(","));
-    }
+    if (allowOrigin) set("Access-Control-Allow-Origin", allowOrigin);
+    if (opts.credentials) set("Access-Control-Allow-Credentials", "true");
+    if (exposeHeadersStr) set("Access-Control-Expose-Headers", exposeHeadersStr);
     if (c.req.method === "OPTIONS") {
-      if (opts.origin !== "*") {
-        set("Vary", "Origin");
-      }
-      if (opts.maxAge != null) {
-        set("Access-Control-Max-Age", opts.maxAge.toString());
-      }
+      if (opts.origin !== "*") c.res.headers.append("Vary", "Origin");
+      if (opts.maxAge != null) set("Access-Control-Max-Age", opts.maxAge.toString());
       const allowMethods = await findAllowMethods(c.req.header("origin") || "", c);
-      if (allowMethods.length) {
-        set("Access-Control-Allow-Methods", allowMethods.join(","));
-      }
-      let headers = opts.allowHeaders;
-      if (!headers?.length) {
+      if (allowMethods) set("Access-Control-Allow-Methods", allowMethods);
+      let headersStr = allowHeadersStr;
+      if (!headersStr) {
         const requestHeaders = c.req.header("Access-Control-Request-Headers");
-        if (requestHeaders) {
-          headers = requestHeaders.split(",").map((h2) => h2.trim());
-        }
+        if (requestHeaders) headersStr = requestHeaders.split(",").map((h2) => h2.trim()).join(",");
       }
-      if (headers?.length) {
-        set("Access-Control-Allow-Headers", headers.join(","));
+      if (headersStr) {
+        set("Access-Control-Allow-Headers", headersStr);
         c.res.headers.append("Vary", "Access-Control-Request-Headers");
       }
       c.res.headers.delete("Content-Length");
@@ -42520,66 +42171,54 @@ var cors = (options) => {
       });
     }
     await next();
-    if (opts.origin !== "*") {
-      c.header("Vary", "Origin", { append: true });
-    }
+    if (opts.origin !== "*") c.header("Vary", "Origin", { append: true });
   };
 };
 
 // node_modules/hono/dist/utils/color.js
 function getColorEnabled() {
   const { process: process3, Deno } = globalThis;
-  const isNoColor = typeof Deno?.noColor === "boolean" ? Deno.noColor : process3 !== void 0 ? (
-    // eslint-disable-next-line no-unsafe-optional-chaining
-    "NO_COLOR" in process3?.env
-  ) : false;
-  return !isNoColor;
+  return !(typeof Deno?.noColor === "boolean" ? Deno.noColor : process3 !== void 0 ? "NO_COLOR" in process3?.env : false);
 }
 async function getColorEnabledAsync() {
   const { navigator } = globalThis;
   const cfWorkers = "cloudflare:workers";
-  const isNoColor = navigator !== void 0 && navigator.userAgent === "Cloudflare-Workers" ? await (async () => {
+  return !(navigator !== void 0 && navigator.userAgent === "Cloudflare-Workers" ? await (async () => {
     try {
       return "NO_COLOR" in ((await import(cfWorkers)).env ?? {});
     } catch {
       return false;
     }
-  })() : !getColorEnabled();
-  return !isNoColor;
+  })() : !getColorEnabled());
 }
 
 // node_modules/hono/dist/middleware/logger/index.js
 var humanize = (times) => {
   const [delimiter, separator] = [",", "."];
-  const orderTimes = times.map((v) => v.replace(/(\d)(?=(\d\d\d)+(?!\d))/g, "$1" + delimiter));
-  return orderTimes.join(separator);
+  return times.map((v) => v.replace(/(\d)(?=(\d\d\d)+(?!\d))/g, "$1" + delimiter)).join(separator);
 };
 var time = (start) => {
   const delta = Date.now() - start;
   return humanize([delta < 1e3 ? delta + "ms" : Math.round(delta / 1e3) + "s"]);
 };
 var colorStatus = async (status) => {
-  const colorEnabled = await getColorEnabledAsync();
-  if (colorEnabled) {
-    switch (status / 100 | 0) {
-      case 5:
-        return `\x1B[31m${status}\x1B[0m`;
-      case 4:
-        return `\x1B[33m${status}\x1B[0m`;
-      case 3:
-        return `\x1B[36m${status}\x1B[0m`;
-      case 2:
-        return `\x1B[32m${status}\x1B[0m`;
-    }
+  if (await getColorEnabledAsync()) switch (status / 100 | 0) {
+    case 5:
+      return `\x1B[31m${status}\x1B[0m`;
+    case 4:
+      return `\x1B[33m${status}\x1B[0m`;
+    case 3:
+      return `\x1B[36m${status}\x1B[0m`;
+    case 2:
+      return `\x1B[32m${status}\x1B[0m`;
   }
   return `${status}`;
 };
 async function log(fn, prefix, method, path7, status = 0, elapsed) {
-  const out = prefix === "<--" ? `${prefix} ${method} ${path7}` : `${prefix} ${method} ${path7} ${await colorStatus(status)} ${elapsed}`;
-  fn(out);
+  fn(prefix === "<--" ? `${prefix} ${method} ${path7}` : `${prefix} ${method} ${path7} ${await colorStatus(status)} ${elapsed}`);
 }
 var logger2 = (fn = console.log) => {
-  return async function logger22(c, next) {
+  return async function logger3(c, next) {
     const { method, url } = c.req;
     const path7 = url.slice(url.indexOf("/", 8));
     await log(fn, "<--", method, path7);
@@ -42624,48 +42263,30 @@ var DEFAULT_OPTIONS = {
   permissionsPolicy: {}
 };
 var secureHeaders = (customOptions) => {
-  const options = { ...DEFAULT_OPTIONS, ...customOptions };
+  const options = {
+    ...DEFAULT_OPTIONS,
+    ...customOptions
+  };
   const headersToSet = getFilteredHeaders(options);
   const callbacks = [];
   if (options.contentSecurityPolicy) {
-    const [callback, value] = getCSPDirectives(
-      options.contentSecurityPolicy,
-      "Content-Security-Policy"
-    );
-    if (callback) {
-      callbacks.push(callback);
-    }
+    const [callback, value] = getCSPDirectives(options.contentSecurityPolicy, "Content-Security-Policy");
+    if (callback) callbacks.push(callback);
     headersToSet.push(["Content-Security-Policy", value]);
   }
   if (options.contentSecurityPolicyReportOnly) {
-    const [callback, value] = getCSPDirectives(
-      options.contentSecurityPolicyReportOnly,
-      "Content-Security-Policy-Report-Only"
-    );
-    if (callback) {
-      callbacks.push(callback);
-    }
+    const [callback, value] = getCSPDirectives(options.contentSecurityPolicyReportOnly, "Content-Security-Policy-Report-Only");
+    if (callback) callbacks.push(callback);
     headersToSet.push(["Content-Security-Policy-Report-Only", value]);
   }
-  if (options.permissionsPolicy && Object.keys(options.permissionsPolicy).length > 0) {
-    headersToSet.push([
-      "Permissions-Policy",
-      getPermissionsPolicyDirectives(options.permissionsPolicy)
-    ]);
-  }
-  if (options.reportingEndpoints) {
-    headersToSet.push(["Reporting-Endpoints", getReportingEndpoints(options.reportingEndpoints)]);
-  }
-  if (options.reportTo) {
-    headersToSet.push(["Report-To", getReportToOptions(options.reportTo)]);
-  }
+  if (options.permissionsPolicy && Object.keys(options.permissionsPolicy).length > 0) headersToSet.push(["Permissions-Policy", getPermissionsPolicyDirectives(options.permissionsPolicy)]);
+  if (options.reportingEndpoints) headersToSet.push(["Reporting-Endpoints", getReportingEndpoints(options.reportingEndpoints)]);
+  if (options.reportTo) headersToSet.push(["Report-To", getReportToOptions(options.reportTo)]);
   return async function secureHeaders2(ctx, next) {
     const headersToSetForReq = callbacks.length === 0 ? headersToSet : callbacks.reduce((acc, cb) => cb(ctx, acc), headersToSet);
     await next();
     setHeaders(ctx, headersToSetForReq);
-    if (options?.removePoweredBy) {
-      ctx.res.headers.delete("X-Powered-By");
-    }
+    if (options?.removePoweredBy) ctx.res.headers.delete("X-Powered-By");
   };
 };
 function getFilteredHeaders(options) {
@@ -42687,46 +42308,28 @@ function getCSPDirectives(contentSecurityPolicy, headerName) {
         });
       }
     });
-    resultValues.push(
-      directive.replace(
-        /[A-Z]+(?![a-z])|[A-Z]/g,
-        (match3, offset) => offset ? "-" + match3.toLowerCase() : match3.toLowerCase()
-      ),
-      ...valueArray.flatMap((value2) => [" ", value2]),
-      "; "
-    );
+    resultValues.push(directive.replace(/[A-Z]+(?![a-z])|[A-Z]/g, (match3, offset) => offset ? "-" + match3.toLowerCase() : match3.toLowerCase()), ...valueArray.flatMap((value2) => [" ", value2]), "; ");
   }
   resultValues.pop();
-  return callbacks.length === 0 ? [void 0, resultValues.join("")] : [
-    (ctx, headersToSet) => headersToSet.map((values) => {
-      if (values[0] === headerName) {
-        const clone2 = values[1].slice();
-        callbacks.forEach((cb) => {
-          cb(ctx, clone2);
-        });
-        return [values[0], clone2.join("")];
-      } else {
-        return values;
-      }
-    }),
-    resultValues
-  ];
+  return callbacks.length === 0 ? [void 0, resultValues.join("")] : [(ctx, headersToSet) => headersToSet.map((values) => {
+    if (values[0] === headerName) {
+      const clone2 = values[1].slice();
+      callbacks.forEach((cb) => {
+        cb(ctx, clone2);
+      });
+      return [values[0], clone2.join("")];
+    } else return values;
+  }), resultValues];
 }
 function getPermissionsPolicyDirectives(policy) {
   return Object.entries(policy).map(([directive, value]) => {
     const kebabDirective = camelToKebab(directive);
-    if (typeof value === "boolean") {
-      return `${kebabDirective}=${value ? "*" : "none"}`;
-    }
+    if (typeof value === "boolean") return `${kebabDirective}=${value ? "*" : "()"}`;
     if (Array.isArray(value)) {
-      if (value.length === 0) {
-        return `${kebabDirective}=()`;
-      }
-      if (value.length === 1 && (value[0] === "*" || value[0] === "none")) {
-        return `${kebabDirective}=${value[0]}`;
-      }
-      const allowlist = value.map((item) => ["self", "src"].includes(item) ? item : `"${item}"`);
-      return `${kebabDirective}=(${allowlist.join(" ")})`;
+      if (value.length === 0) return `${kebabDirective}=()`;
+      if (value.length === 1 && value[0] === "*") return `${kebabDirective}=*`;
+      if (value.length === 1 && value[0] === "none") return `${kebabDirective}=()`;
+      return `${kebabDirective}=(${value.map((item) => ["self", "src"].includes(item) ? item : `"${item}"`).join(" ")})`;
     }
     return "";
   }).filter(Boolean).join(", ");
@@ -42892,110 +42495,65 @@ var trimCookieWhitespace = (value) => {
   let end = value.length;
   while (start < end) {
     const charCode = value.charCodeAt(start);
-    if (charCode !== 32 && charCode !== 9) {
-      break;
-    }
+    if (charCode !== 32 && charCode !== 9) break;
     start++;
   }
   while (end > start) {
     const charCode = value.charCodeAt(end - 1);
-    if (charCode !== 32 && charCode !== 9) {
-      break;
-    }
+    if (charCode !== 32 && charCode !== 9) break;
     end--;
   }
   return start === 0 && end === value.length ? value : value.slice(start, end);
 };
 var parse = (cookie, name) => {
-  if (name && cookie.indexOf(name) === -1) {
-    return {};
-  }
+  if (name && cookie.indexOf(name) === -1) return {};
   const pairs = cookie.split(";");
   const parsedCookie = /* @__PURE__ */ Object.create(null);
   for (const pairStr of pairs) {
     const valueStartPos = pairStr.indexOf("=");
-    if (valueStartPos === -1) {
-      continue;
-    }
+    if (valueStartPos === -1) continue;
     const cookieName = trimCookieWhitespace(pairStr.substring(0, valueStartPos));
-    if (name && name !== cookieName || !relaxedCookieNameRegEx.test(cookieName) || cookieName in parsedCookie) {
-      continue;
-    }
+    if (name && name !== cookieName || !relaxedCookieNameRegEx.test(cookieName) || cookieName in parsedCookie) continue;
     let cookieValue = trimCookieWhitespace(pairStr.substring(valueStartPos + 1));
-    if (cookieValue.startsWith('"') && cookieValue.endsWith('"')) {
-      cookieValue = cookieValue.slice(1, -1);
-    }
+    if (cookieValue.startsWith('"') && cookieValue.endsWith('"')) cookieValue = cookieValue.slice(1, -1);
     if (validCookieValueRegEx.test(cookieValue)) {
       parsedCookie[cookieName] = tryDecodeURIComponent(cookieValue);
-      if (name) {
-        break;
-      }
+      if (name) break;
     }
   }
   return parsedCookie;
 };
 var _serialize = (name, value, opt = {}) => {
-  if (!validCookieNameRegEx.test(name)) {
-    throw new Error("Invalid cookie name");
-  }
+  if (!validCookieNameRegEx.test(name)) throw new Error("Invalid cookie name");
   let cookie = `${name}=${value}`;
-  if (name.startsWith("__Secure-") && !opt.secure) {
-    throw new Error("__Secure- Cookie must have Secure attributes");
-  }
+  if (name.startsWith("__Secure-") && !opt.secure) throw new Error("__Secure- Cookie must have Secure attributes");
   if (name.startsWith("__Host-")) {
-    if (!opt.secure) {
-      throw new Error("__Host- Cookie must have Secure attributes");
-    }
-    if (opt.path !== "/") {
-      throw new Error('__Host- Cookie must have Path attributes with "/"');
-    }
-    if (opt.domain) {
-      throw new Error("__Host- Cookie must not have Domain attributes");
-    }
+    if (!opt.secure) throw new Error("__Host- Cookie must have Secure attributes");
+    if (opt.path !== "/") throw new Error('__Host- Cookie must have Path attributes with "/"');
+    if (opt.domain) throw new Error("__Host- Cookie must not have Domain attributes");
   }
-  for (const key of ["domain", "path", "sameSite", "priority"]) {
-    if (opt[key] && /[;\r\n]/.test(opt[key])) {
-      throw new Error(`${key} must not contain ";", "\\r", or "\\n"`);
-    }
-  }
+  for (const key of [
+    "domain",
+    "path",
+    "sameSite",
+    "priority"
+  ]) if (opt[key] && /[;\r\n]/.test(opt[key])) throw new Error(`${key} must not contain ";", "\\r", or "\\n"`);
   if (opt && typeof opt.maxAge === "number" && opt.maxAge >= 0) {
-    if (opt.maxAge > 3456e4) {
-      throw new Error(
-        "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration."
-      );
-    }
+    if (opt.maxAge > 3456e4) throw new Error("Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.");
     cookie += `; Max-Age=${opt.maxAge | 0}`;
   }
-  if (opt.domain && opt.prefix !== "host") {
-    cookie += `; Domain=${opt.domain}`;
-  }
-  if (opt.path) {
-    cookie += `; Path=${opt.path}`;
-  }
+  if (opt.domain && opt.prefix !== "host") cookie += `; Domain=${opt.domain}`;
+  if (opt.path) cookie += `; Path=${opt.path}`;
   if (opt.expires) {
-    if (opt.expires.getTime() - Date.now() > 3456e7) {
-      throw new Error(
-        "Cookies Expires SHOULD NOT be greater than 400 days (34560000 seconds) in the future."
-      );
-    }
+    if (opt.expires.getTime() - Date.now() > 3456e7) throw new Error("Cookies Expires SHOULD NOT be greater than 400 days (34560000 seconds) in the future.");
     cookie += `; Expires=${opt.expires.toUTCString()}`;
   }
-  if (opt.httpOnly) {
-    cookie += "; HttpOnly";
-  }
-  if (opt.secure) {
-    cookie += "; Secure";
-  }
-  if (opt.sameSite) {
-    cookie += `; SameSite=${opt.sameSite.charAt(0).toUpperCase() + opt.sameSite.slice(1)}`;
-  }
-  if (opt.priority) {
-    cookie += `; Priority=${opt.priority.charAt(0).toUpperCase() + opt.priority.slice(1)}`;
-  }
+  if (opt.httpOnly) cookie += "; HttpOnly";
+  if (opt.secure) cookie += "; Secure";
+  if (opt.sameSite) cookie += `; SameSite=${opt.sameSite.charAt(0).toUpperCase() + opt.sameSite.slice(1)}`;
+  if (opt.priority) cookie += `; Priority=${opt.priority.charAt(0).toUpperCase() + opt.priority.slice(1)}`;
   if (opt.partitioned) {
-    if (!opt.secure) {
-      throw new Error("Partitioned Cookie must have Secure attributes");
-    }
+    if (!opt.secure) throw new Error("Partitioned Cookie must have Secure attributes");
     cookie += "; Partitioned";
   }
   return cookie;
@@ -43009,38 +42567,32 @@ var serialize = (name, value, opt) => {
 var getCookie = (c, key, prefix) => {
   const cookie = c.req.raw.headers.get("Cookie");
   if (typeof key === "string") {
-    if (!cookie) {
-      return void 0;
-    }
+    if (!cookie) return;
     let finalKey = key;
-    if (prefix === "secure") {
-      finalKey = "__Secure-" + key;
-    } else if (prefix === "host") {
-      finalKey = "__Host-" + key;
-    }
-    const obj2 = parse(cookie, finalKey);
-    return obj2[finalKey];
+    if (prefix === "secure") finalKey = "__Secure-" + key;
+    else if (prefix === "host") finalKey = "__Host-" + key;
+    return parse(cookie, finalKey)[finalKey];
   }
-  if (!cookie) {
-    return {};
-  }
-  const obj = parse(cookie);
-  return obj;
+  if (!cookie) return {};
+  return parse(cookie);
 };
 var generateCookie = (name, value, opt) => {
   let cookie;
-  if (opt?.prefix === "secure") {
-    cookie = serialize("__Secure-" + name, value, { path: "/", ...opt, secure: true });
-  } else if (opt?.prefix === "host") {
-    cookie = serialize("__Host-" + name, value, {
-      ...opt,
-      path: "/",
-      secure: true,
-      domain: void 0
-    });
-  } else {
-    cookie = serialize(name, value, { path: "/", ...opt });
-  }
+  if (opt?.prefix === "secure") cookie = serialize("__Secure-" + name, value, {
+    path: "/",
+    ...opt,
+    secure: true
+  });
+  else if (opt?.prefix === "host") cookie = serialize("__Host-" + name, value, {
+    ...opt,
+    path: "/",
+    secure: true,
+    domain: void 0
+  });
+  else cookie = serialize(name, value, {
+    path: "/",
+    ...opt
+  });
   return cookie;
 };
 var setCookie = (c, name, value, opt) => {
@@ -43049,7 +42601,10 @@ var setCookie = (c, name, value, opt) => {
 };
 var deleteCookie = (c, name, opt) => {
   const deletedCookie = getCookie(c, name, opt?.prefix);
-  setCookie(c, name, "", { ...opt, maxAge: 0 });
+  setCookie(c, name, "", {
+    ...opt,
+    maxAge: 0
+  });
   return deletedCookie;
 };
 
@@ -46352,7 +45907,8 @@ __export(sqlite_exports, {
   backupTelegramHistory: () => backupTelegramHistory,
   rateLimits: () => rateLimits,
   schemaMetadata: () => schemaMetadata,
-  vault: () => vault
+  vault: () => vault,
+  vaultTombstone: () => vaultTombstone
 });
 
 // node_modules/drizzle-orm/sqlite-core/foreign-keys.js
@@ -49766,7 +49322,13 @@ var vault = sqliteTable("vault", {
   updatedAt: integer2("updated_at"),
   updatedBy: text2("updated_by"),
   sortOrder: integer2("sort_order").default(0),
-  deletedAt: integer2("deleted_at")
+  deletedAt: integer2("deleted_at"),
+  syncVersion: integer2("sync_version").default(0),
+  extraData: text2("extra_data")
+});
+var vaultTombstone = sqliteTable("vault_tombstone", {
+  id: text2("id").primaryKey(),
+  purgedAt: integer2("purged_at").notNull()
 });
 var backupProviders = sqliteTable("backup_providers", {
   id: integer2("id").primaryKey({ autoIncrement: true }),
@@ -49857,7 +49419,8 @@ __export(mysql_exports, {
   backupTelegramHistory: () => backupTelegramHistory2,
   rateLimits: () => rateLimits2,
   schemaMetadata: () => schemaMetadata2,
-  vault: () => vault2
+  vault: () => vault2,
+  vaultTombstone: () => vaultTombstone2
 });
 
 // node_modules/drizzle-orm/mysql-core/foreign-keys.js
@@ -53838,7 +53401,13 @@ var vault2 = mysqlTable("vault", {
   updatedAt: bigint2("updated_at", { mode: "number" }),
   updatedBy: varchar2("updated_by", { length: 255 }),
   sortOrder: bigint2("sort_order", { mode: "number" }).default(0),
-  deletedAt: bigint2("deleted_at", { mode: "number" })
+  deletedAt: bigint2("deleted_at", { mode: "number" }),
+  syncVersion: bigint2("sync_version", { mode: "number" }).default(0),
+  extraData: longtext("extra_data")
+});
+var vaultTombstone2 = mysqlTable("vault_tombstone", {
+  id: varchar2("id", { length: 36 }).primaryKey(),
+  purgedAt: bigint2("purged_at", { mode: "number" }).notNull()
 });
 var backupProviders2 = mysqlTable("backup_providers", {
   id: int("id").primaryKey().autoincrement(),
@@ -53912,7 +53481,8 @@ __export(pg_exports, {
   backupTelegramHistory: () => backupTelegramHistory3,
   rateLimits: () => rateLimits3,
   schemaMetadata: () => schemaMetadata3,
-  vault: () => vault3
+  vault: () => vault3,
+  vaultTombstone: () => vaultTombstone3
 });
 
 // node_modules/drizzle-orm/pg-core/view-base.js
@@ -57157,7 +56727,13 @@ var vault3 = pgTable("vault", {
   updatedAt: bigint("updated_at", { mode: "number" }),
   updatedBy: varchar("updated_by"),
   sortOrder: bigint("sort_order", { mode: "number" }).default(0),
-  deletedAt: bigint("deleted_at", { mode: "number" })
+  deletedAt: bigint("deleted_at", { mode: "number" }),
+  syncVersion: bigint("sync_version", { mode: "number" }).default(0),
+  extraData: text("extra_data")
+});
+var vaultTombstone3 = pgTable("vault_tombstone", {
+  id: varchar("id").primaryKey(),
+  purgedAt: bigint("purged_at", { mode: "number" }).notNull()
 });
 var backupProviders3 = pgTable("backup_providers", {
   id: serial("id").primaryKey(),
@@ -57224,6 +56800,7 @@ var schemaMetadata3 = pgTable("_schema_metadata", {
 // src/shared/db/schema/index.ts
 var engine = typeof process !== "undefined" && process.env.DB_ENGINE ? process.env.DB_ENGINE.toLowerCase() : "sqlite";
 var vault4;
+var vaultTombstone4;
 var backupProviders4;
 var backupTelegramHistory4;
 var backupEmailHistory4;
@@ -57233,6 +56810,7 @@ var rateLimits4;
 var schemaMetadata4;
 if (engine === "mysql") {
   vault4 = vault2;
+  vaultTombstone4 = vaultTombstone2;
   backupProviders4 = backupProviders2;
   backupTelegramHistory4 = backupTelegramHistory2;
   backupEmailHistory4 = backupEmailHistory2;
@@ -57242,6 +56820,7 @@ if (engine === "mysql") {
   schemaMetadata4 = schemaMetadata2;
 } else if (engine === "postgres" || engine === "postgresql") {
   vault4 = vault3;
+  vaultTombstone4 = vaultTombstone3;
   backupProviders4 = backupProviders3;
   backupTelegramHistory4 = backupTelegramHistory3;
   backupEmailHistory4 = backupEmailHistory3;
@@ -57251,6 +56830,7 @@ if (engine === "mysql") {
   schemaMetadata4 = schemaMetadata3;
 } else {
   vault4 = vault;
+  vaultTombstone4 = vaultTombstone;
   backupProviders4 = backupProviders;
   backupTelegramHistory4 = backupTelegramHistory;
   backupEmailHistory4 = backupEmailHistory;
@@ -57296,13 +56876,26 @@ var SessionRepository = class {
     await this.db.delete(authSessions4).where(conditions);
     return countRes.length;
   }
-  async updateLastActive(sessionId, ipAddress, timestamp3, deviceType) {
+  async deleteOtherSessionsByDeviceId(userId, deviceId, excludeSessionId) {
+    const conditions = and(
+      eq(authSessions4.userId, userId),
+      eq(authSessions4.deviceId, deviceId),
+      ne(authSessions4.id, excludeSessionId)
+    );
+    const countRes = await this.db.select().from(authSessions4).where(conditions);
+    await this.db.delete(authSessions4).where(conditions);
+    return countRes.length;
+  }
+  async updateLastActive(sessionId, ipAddress, timestamp3, deviceType, deviceId) {
     const updateData = {
       lastActiveAt: timestamp3,
       ipAddress
     };
     if (deviceType) {
       updateData.deviceType = deviceType;
+    }
+    if (deviceId) {
+      updateData.deviceId = deviceId;
     }
     const result = await this.db.update(authSessions4).set(updateData).where(eq(authSessions4.id, sessionId)).execute();
     return result.success;
@@ -57313,14 +56906,28 @@ var SessionRepository = class {
     await this.db.delete(authSessions4).where(conditions);
     return countRes.length;
   }
+  async cleanupExpiredPairingTickets(userId, cutoffTimestamp) {
+    const conditions = and(
+      eq(authSessions4.userId, userId),
+      eq(authSessions4.deviceType, "Pairing_Ticket"),
+      lt(authSessions4.createdAt, cutoffTimestamp)
+    );
+    const countRes = await this.db.select().from(authSessions4).where(conditions);
+    await this.db.delete(authSessions4).where(conditions);
+    return countRes.length;
+  }
 };
 
 // src/shared/utils/ua.ts
 function parseUserAgent(ua) {
   if (!ua || ua === "Unknown Device") return "Unknown Device";
   let isExtension = false;
+  let isApp = false;
   let actualUa = ua;
-  if (ua.startsWith("NodeAuthExtension/")) {
+  if (ua.startsWith("NodeAuthApp/")) {
+    isApp = true;
+    actualUa = ua.replace("NodeAuthApp/", "") || "Mobile";
+  } else if (ua.startsWith("NodeAuthExtension/")) {
     isExtension = true;
     actualUa = ua.replace("NodeAuthExtension/", "") || "Unknown";
   }
@@ -57361,8 +56968,11 @@ function parseUserAgent(ua) {
   else if (dt.includes("opios/")) browser = "Opera";
   else if (dt.includes("safari/") && !dt.includes("chrome/") && !dt.includes("crios/") && !dt.includes("fxios/") && !dt.includes("edgios/") && !dt.includes("opios/") && !dt.includes("chromium/")) browser = "Safari";
   const osFull = osVersion ? `${os} ${osVersion}` : os;
+  if (isApp) {
+    return `NodeAuth App on ${osFull !== "Unknown OS" ? osFull : actualUa}`;
+  }
   if (isExtension) {
-    return `${browser} NodeAuth Extension on ${osFull}`;
+    return `Extension on ${os} ${browser}`;
   }
   return `${browser} on ${osFull}`;
 }
@@ -57438,7 +57048,8 @@ var SessionService = class {
    */
   async getUserSessions(_userId, currentSessionId) {
     const sessions = await this.repo.findAll();
-    return sessions.map((s2) => ({
+    const activeSessions = sessions.filter((s2) => s2.deviceType !== "Pairing_Ticket" && s2.deviceType !== "Pending_Mobile_Pairing");
+    return activeSessions.map((s2) => ({
       id: s2.id,
       userId: maskUserId(s2.userId),
       // 🛡️ 架构师修复：脱敏处理
@@ -57488,7 +57099,7 @@ var SessionService = class {
   /**
    * Quick boolean valid check for incoming requests
    */
-  async validateSession(sessionId) {
+  async validateSession(sessionId, userAgentToUpgrade) {
     if (!sessionId) return false;
     const session = await this.repo.findById(sessionId);
     if (!session) return false;
@@ -57531,7 +57142,8 @@ async function authMiddleware(c, next) {
     throw new AppError("session_invalid_schema", 401);
   }
   const sessionService = new SessionService(c.env);
-  const isValid2 = await sessionService.validateSession(sessionId);
+  const userAgent = c.req.header("User-Agent");
+  const isValid2 = await sessionService.validateSession(sessionId, userAgent);
   if (!isValid2) {
     throw new AppError("session_kicked_out", 401);
   }
@@ -60080,7 +59692,6 @@ async function validateCertificatePath(x5cCertsPEM, trustAnchorsPEM = []) {
   if (trustAnchorsPEM.length === 0) {
     return true;
   }
-  const WebCrypto = await getWebCrypto();
   const x5cCertsParsed = x5cCertsPEM.map((certPEM) => new import_x5092.X509Certificate(certPEM));
   for (let i2 = 0; i2 < x5cCertsParsed.length; i2++) {
     const cert = x5cCertsParsed[i2];
@@ -60125,40 +59736,35 @@ ${certPEM}`, { cause: _err });
   if (validTrustAnchors.length === 0) {
     throw new Error("No specified trust anchor was valid for verifying x5c");
   }
-  let invalidSubjectAndIssuerError = false;
-  for (const anchor of trustAnchorsParsed) {
+  let invalidCertificateChain = true;
+  for (const anchor of validTrustAnchors) {
     try {
       const x5cWithTrustAnchor = x5cCertsParsed.concat([anchor]);
-      if (new Set(x5cWithTrustAnchor).size !== x5cWithTrustAnchor.length) {
+      const numUniqueCerts = new Set(x5cWithTrustAnchor.map((cert) => cert.toString("pem"))).size;
+      if (numUniqueCerts !== x5cWithTrustAnchor.length) {
         throw new Error("Invalid certificate path: found duplicate certificates");
       }
-      for (let i2 = 0; i2 < x5cWithTrustAnchor.length - 1; i2++) {
-        const subject = x5cWithTrustAnchor[i2];
-        const issuer = x5cWithTrustAnchor[i2 + 1];
-        const issuerSignedSubject = await subject.verify({ publicKey: issuer.publicKey, signatureOnly: true }, WebCrypto);
-        if (!issuerSignedSubject) {
-          throw new InvalidSubjectAndIssuer();
-        }
-        if (issuer.subject === issuer.issuer) {
-          const issuerSignedIssuer = await issuer.verify({ publicKey: issuer.publicKey, signatureOnly: true }, WebCrypto);
-          if (!issuerSignedIssuer) {
-            throw new InvalidSubjectAndIssuer();
-          }
-          break;
-        }
+      const x5cLeafCert = x5cCertsParsed[0];
+      let x5cIntermediates = [];
+      if (x5cCertsParsed.length > 1) {
+        x5cIntermediates = x5cCertsParsed.slice(1);
       }
-      invalidSubjectAndIssuerError = false;
+      const chainBuilder = new import_x5092.X509ChainBuilder({ certificates: [...x5cIntermediates, anchor] });
+      const chain = await chainBuilder.build(x5cLeafCert);
+      if (chain.length < numUniqueCerts) {
+        continue;
+      }
+      if (chain[chain.length - 1].subject !== anchor.subject) {
+        continue;
+      }
+      invalidCertificateChain = false;
       break;
     } catch (err) {
-      if (err instanceof InvalidSubjectAndIssuer) {
-        invalidSubjectAndIssuerError = true;
-      } else {
-        throw new Error("Unexpected error while validating certificate path", { cause: err });
-      }
+      throw new Error("Unexpected error while validating certificate path", { cause: err });
     }
   }
-  if (invalidSubjectAndIssuerError) {
-    throw new InvalidSubjectAndIssuer();
+  if (invalidCertificateChain) {
+    throw new InvalidCertificatePath();
   }
   return true;
 }
@@ -60174,11 +59780,11 @@ function assertCertIsWithinValidTimeWindow(certNotBefore, certNotAfter) {
     throw new Error("Certificate is not yet valid or expired");
   }
 }
-var InvalidSubjectAndIssuer = class extends Error {
+var InvalidCertificatePath = class extends Error {
   constructor() {
-    const message = "Subject issuer did not match issuer subject";
+    const message = "x5c could not be chained to any specified trust anchor";
     super(message);
-    this.name = "InvalidSubjectAndIssuer";
+    this.name = "InvalidX5CChain";
   }
 };
 
@@ -60301,24 +59907,48 @@ function parseJWT(jwt) {
   ];
 }
 
+// node_modules/@simplewebauthn/server/esm/helpers/mapJWSAlgToCOSEAlg.js
+function mapJWSAlgToCOSEAlg(alg) {
+  let algCOSE;
+  if (alg === "ES256") {
+    algCOSE = COSEALG.ES256;
+  } else if (alg === "ES384") {
+    algCOSE = COSEALG.ES384;
+  } else if (alg === "ES512") {
+    algCOSE = COSEALG.ES512;
+  } else if (alg === "RS256") {
+    algCOSE = COSEALG.RS256;
+  } else if (alg === "RS384") {
+    algCOSE = COSEALG.RS384;
+  } else if (alg === "RS512") {
+    algCOSE = COSEALG.RS512;
+  } else {
+    throw new Error(`Unable to map JWS algorithm "${alg}" to a COSE algorithm`);
+  }
+  return algCOSE;
+}
+
 // node_modules/@simplewebauthn/server/esm/metadata/verifyJWT.js
 function verifyJWT(jwt, leafCert) {
   const [header, payload, signature] = jwt.split(".");
   const certCOSE = convertX509PublicKeyToCOSE(leafCert);
   const data = isoUint8Array_exports.fromUTF8String(`${header}.${payload}`);
   const signatureBytes = isoBase64URL_exports.toBuffer(signature);
+  const headerJSON = JSON.parse(isoBase64URL_exports.toUTF8String(header));
+  const jwtHeaderHashAlgCOSE = mapJWSAlgToCOSEAlg(headerJSON.alg);
   if (isCOSEPublicKeyEC2(certCOSE)) {
     return verifyEC2({
       data,
       signature: signatureBytes,
       cosePublicKey: certCOSE,
-      shaHashOverride: COSEALG.ES256
+      shaHashOverride: jwtHeaderHashAlgCOSE
     });
   } else if (isCOSEPublicKeyRSA(certCOSE)) {
     return verifyRSA({
       data,
       signature: signatureBytes,
-      cosePublicKey: certCOSE
+      cosePublicKey: certCOSE,
+      shaHashOverride: jwtHeaderHashAlgCOSE
     });
   }
   const kty = certCOSE.get(COSEKEYS.kty);
@@ -60524,6 +60154,38 @@ Mx86OyXShkDOOyyGeMlhLxS67ttVb9+E7gUJTb0o2HLO02JQZR7rkpeDMdmztcpH
 WD9f
 -----END CERTIFICATE-----
  `;
+var GlobalSign_Root_R46 = `-----BEGIN CERTIFICATE-----
+MIIFWjCCA0KgAwIBAgISEdK7udcjGJ5AXwqdLdDfJWfRMA0GCSqGSIb3DQEBDAUA
+MEYxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBHbG9iYWxTaWduIG52LXNhMRwwGgYD
+VQQDExNHbG9iYWxTaWduIFJvb3QgUjQ2MB4XDTE5MDMyMDAwMDAwMFoXDTQ2MDMy
+MDAwMDAwMFowRjELMAkGA1UEBhMCQkUxGTAXBgNVBAoTEEdsb2JhbFNpZ24gbnYt
+c2ExHDAaBgNVBAMTE0dsb2JhbFNpZ24gUm9vdCBSNDYwggIiMA0GCSqGSIb3DQEB
+AQUAA4ICDwAwggIKAoICAQCsrHQy6LNl5brtQyYdpokNRbopiLKkHWPd08EsCVeJ
+OaFV6Wc0dwxu5FUdUiXSE2te4R2pt32JMl8Nnp8semNgQB+msLZ4j5lUlghYruQG
+vGIFAha/r6gjA7aUD7xubMLL1aa7DOn2wQL7Id5m3RerdELv8HQvJfTqa1VbkNud
+316HCkD7rRlr+/fKYIje2sGP1q7Vf9Q8g+7XFkyDRTNrJ9CG0Bwta/OrffGFqfUo
+0q3v84RLHIf8E6M6cqJaESvWJ3En7YEtbWaBkoe0G1h6zD8K+kZPTXhc+CtI4wSE
+y132tGqzZfxCnlEmIyDLPRT5ge1lFgBPGmSXZgjPjHvjK8Cd+RTyG/FWaha/LIWF
+zXg4mutCagI0GIMXTpRW+LaCtfOW3T3zvn8gdz57GSNrLNRyc0NXfeD412lPFzYE
++cCQYDdF3uYM2HSNrpyibXRdQr4G9dlkbgIQrImwTDsHTUB+JMWKmIJ5jqSngiCN
+I/onccnfxkF0oE32kRbcRoxfKWMxWXEM2G/CtjJ9++ZdU6Z+Ffy7dXxd7Pj2Fxzs
+x2sZy/N78CsHpdlseVR2bJ0cpm4O6XkMqCNqo98bMDGfsVR7/mrLZqrcZdCinkqa
+ByFrgY/bxFn63iLABJzjqls2k+g9vXqhnQt2sQvHnf3PmKgGwvgqo6GDoLclcqUC
+4wIDAQABo0IwQDAOBgNVHQ8BAf8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zAdBgNV
+HQ4EFgQUA1yrc4GHqMywptWU4jaWSf8FmSwwDQYJKoZIhvcNAQEMBQADggIBAHx4
+7PYCLLtbfpIrXTncvtgdokIzTfnvpCo7RGkerNlFo048p9gkUbJUHJNOxO97k4Vg
+JuoJSOD1u8fpaNK7ajFxzHmuEajwmf3lH7wvqMxX63bEIaZHU1VNaL8FpO7XJqti
+2kM3S+LGteWygxk6x9PbTZ4IevPuzz5i+6zoYMzRx6Fcg0XERczzF2sUyQQCPtIk
+pnnpHs6i58FZFZ8d4kuaPp92CC1r2LpXFNqD6v6MVenQTqnMdzGxRBF6XLE+0xRF
+FRhiJBPSy03OXIPBNvIQtQ6IbbjhVp+J3pZmOUdkLG5NrmJ7v2B0GbhWrJKsFjLt
+rWhV/pi60zTe9Mlhww6G9kuEYO4Ne7UyWHmRVSyBQ7N0H3qqJZ4d16GLuc1CLgSk
+ZoNNiTW2bKg2SnkheCLQQrzRQDGQob4Ez8pn7fXwgNNgyYMqIgXQBztSvwyeqiv5
+u+YfjyW6hY0XHgL+XVAEV8/+LbzvXMAaq7afJMbfc2hIkCwU9D9SGuTSyxTDYWnP
+4vkYxboznxSjBF25cfe1lNj2M8FawTSLfJvdkzrnE6JwYZ+vj+vYxXX4M2bUdGc6
+N3ec592kD3ZDZopD8p/7DEJ4Y9HiD2971KE9dJeFt0g5QdYg/NA6s/rob8SKunE3
+vouXsXgxT7PntgMTzlSdriVZzH81Xwj3QEUxeCp6
+-----END CERTIFICATE-----
+`;
 
 // node_modules/@simplewebauthn/server/esm/services/settingsService.js
 var BaseSettingsService = class {
@@ -60573,7 +60235,10 @@ SettingsService.setRootCertificates({
 });
 SettingsService.setRootCertificates({
   identifier: "mds",
-  certificates: [GlobalSign_Root_CA_R3]
+  certificates: [
+    GlobalSign_Root_CA_R3,
+    GlobalSign_Root_R46
+  ]
 });
 
 // node_modules/@simplewebauthn/server/esm/metadata/verifyMDSBlob.js
@@ -61394,7 +61059,8 @@ async function verifyAttestationPacked(options) {
     verified = await verifySignature({
       signature: sig,
       data: signatureBase,
-      x509Certificate: x5c[0]
+      x509Certificate: x5c[0],
+      hashAlgorithm: alg
     });
   } else {
     verified = await verifySignature({
@@ -61477,7 +61143,8 @@ async function verifyAttestationAndroidSafetyNet(options) {
   const verified = await verifySignature({
     signature: signatureBuffer,
     data: signatureBaseBuffer,
-    x509Certificate: leafCertBuffer
+    x509Certificate: leafCertBuffer,
+    hashAlgorithm: alg
   });
   return verified;
 }
@@ -70194,7 +69861,7 @@ var Web3WalletAuthService = class {
 // src/features/auth/authRoutes.ts
 init_logger();
 init_request();
-var auth = new Hono2();
+var auth = new Hono3();
 var isSecureContext = (c) => c.env.ENVIRONMENT !== "development";
 var getService = (c) => new AuthService(c.env);
 var getWebAuthnService = (c) => new WebAuthnService(c.env, getRealRequestUrl(c), c.req.header());
@@ -70594,6 +70261,100 @@ auth.post("/extension-session", authMiddleware, rateLimit({
     token
   });
 });
+auth.post("/pair-intent", authMiddleware, rateLimit({
+  windowMs: 60 * 1e3,
+  // 1分钟内限制触发
+  max: 5
+  // 同一 IP 最多尝试 5 次配对
+}), async (c) => {
+  const user = c.get("user");
+  const clientIp = getClientIp(c);
+  const service = getSessionService(c);
+  const ticketId = await service.createSession(
+    user.email || user.id,
+    "Pairing_Ticket",
+    clientIp,
+    void 0,
+    "mobile"
+  );
+  const expiresAt = Date.now() + 5 * 60 * 1e3;
+  try {
+    await service.repo.cleanupExpiredPairingTickets(user.email || user.id, Date.now() - 5 * 60 * 1e3);
+  } catch (e2) {
+    console.error("[PairIntent] Failed to cleanup expired tickets:", e2);
+  }
+  return c.json({
+    success: true,
+    ticketId,
+    expiresAt
+  });
+});
+auth.get("/pair-status", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const ticketId = c.req.query("ticketId");
+  if (!ticketId) return c.json({ error: "Missing ticketId" }, 400);
+  const service = getSessionService(c);
+  const session = await service.repo.findById(ticketId);
+  if (!session) {
+    return c.json({ error: "Ticket not found or expired" }, 404);
+  }
+  if (session.userId !== (user.email || user.id)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  if (session.deviceType === "Pairing_Ticket") {
+    return c.json({ status: "pending" });
+  }
+  return c.json({ status: "confirmed" });
+});
+auth.post("/pair-confirm", rateLimit({
+  windowMs: 60 * 1e3,
+  max: 10
+}), async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ticketId = body?.ticketId;
+  let deviceId = body?.deviceId;
+  if (!ticketId || typeof ticketId !== "string") {
+    return c.json({ error: "Invalid or expired ticket" }, 404);
+  }
+  if (typeof deviceId === "string" && deviceId.length > 64) {
+    deviceId = deviceId.substring(0, 64);
+  } else if (!deviceId || typeof deviceId !== "string") {
+    deviceId = crypto.randomUUID();
+  }
+  const service = getSessionService(c);
+  const session = await service.repo.findById(ticketId);
+  if (!session) {
+    return c.json({ error: "Invalid or expired ticket" }, 404);
+  }
+  if (session.deviceType !== "Pairing_Ticket") {
+    return c.json({ error: "Ticket already claimed or invalid" }, 400);
+  }
+  if (Date.now() - session.createdAt > 5 * 60 * 1e3) {
+    return c.json({ error: "Ticket expired" }, 400);
+  }
+  const userAgent = c.req.header("User-Agent") || "Unknown";
+  const newDeviceType = `NodeAuthApp/${userAgent}`;
+  const clientIp = getClientIp(c);
+  await service.repo.updateLastActive(ticketId, clientIp, Date.now(), newDeviceType, deviceId);
+  if (deviceId) {
+    await service.repo.deleteOtherSessionsByDeviceId(session.userId, deviceId, ticketId);
+  }
+  const payload = {
+    sessionId: ticketId,
+    userInfo: {
+      id: session.userId,
+      username: session.userId,
+      email: session.userId,
+      provider: session.provider
+    }
+  };
+  const { generateSecureJWT: generateSecureJWT2 } = await Promise.resolve().then(() => (init_crypto(), crypto_exports));
+  const token = await generateSecureJWT2(payload, c.env.JWT_SECRET || "", 365 * 24 * 60 * 60);
+  return c.json({
+    success: true,
+    token
+  });
+});
 var authRoutes_default = auth;
 
 // src/shared/db/db.ts
@@ -70648,8 +70409,10 @@ async function batchInsertVaultItems(dbClient, items, key, createdBy, startSortO
       deletedAt: item.deletedAt ?? item.deleted_at ?? null,
       createdAt: Date.now(),
       // camelCase 匹配 Drizzle schema
-      createdBy
+      createdBy,
       // camelCase 匹配 Drizzle schema
+      updatedAt: Date.now(),
+      updatedBy: createdBy
     };
   }));
   if (typeof dbClient.batch === "function") {
@@ -70940,6 +70703,7 @@ var VaultService = class {
     }
     const encryptedSecret = await encryptField(secret, this.encryptionKey);
     const maxSort = await this.repository.getMaxSortOrder();
+    const now = Date.now();
     const created = await this.repository.create({
       id: crypto.randomUUID(),
       service,
@@ -70952,8 +70716,10 @@ var VaultService = class {
       period,
       counter,
       sortOrder: maxSort + 1,
-      createdAt: Date.now(),
-      createdBy: userId
+      createdAt: now,
+      createdBy: userId,
+      updatedAt: now,
+      updatedBy: userId
     });
     const { createdBy: _c, updatedBy: _u, ...restCreated } = created;
     return {
@@ -71367,7 +71133,8 @@ var TrashService = class {
     if (existing.deletedAt !== null) {
       return { success: true };
     }
-    await this.repository.update(id, { deletedAt: Date.now() });
+    const now = Date.now();
+    await this.repository.update(id, { deletedAt: now, updatedAt: now });
     return { success: true };
   }
   /**
@@ -71401,7 +71168,8 @@ var TrashService = class {
     }
     await this.repository.update(id, {
       deletedAt: null,
-      sortOrder: nextSortOrder
+      sortOrder: nextSortOrder,
+      updatedAt: Date.now()
     });
     return { success: true };
   }
@@ -71437,7 +71205,7 @@ var TrashService = class {
     if (clientTimestamp < 0 || clientTimestamp > now + 3e5) {
       deletedAt = now;
     }
-    await this.repository.update(id, { deletedAt });
+    await this.repository.update(id, { deletedAt, updatedAt: now });
     return { success: true };
   }
 };
@@ -71460,6 +71228,18 @@ var VaultRepository = class {
    */
   async findAllIncludeDeleted() {
     return await this.db.select().from(vault4).orderBy(desc(vault4.sortOrder), desc(vault4.createdAt));
+  }
+  /**
+   * 获取自指定时间戳以来所有新增、修改、软删除的数据 (增量同步水位线专用)
+   */
+  async findUpdatedSince(sinceTimestamp, limitVal = 500, offsetVal = 0) {
+    if (!this.db || typeof this.db.select !== "function") {
+      return [];
+    }
+    const baseQuery = this.db.select().from(vault4);
+    const effectiveUpdatedAt = sql`coalesce(${vault4.updatedAt}, ${vault4.createdAt})`;
+    const queryWithWhere = sinceTimestamp && sinceTimestamp > 0 ? baseQuery.where(sql`${effectiveUpdatedAt} > ${sinceTimestamp}`) : baseQuery;
+    return await queryWithWhere.orderBy(desc(effectiveUpdatedAt)).limit(limitVal).offset(offsetVal);
   }
   /**
    * 获取当前最大排序值
@@ -71569,6 +71349,13 @@ var VaultRepository = class {
     return result[0];
   }
   /**
+   * 根据多个 ID 批量获取 items (包含已软删的)
+   */
+  async findByIds(ids) {
+    if (!ids || ids.length === 0) return [];
+    return await this.db.select().from(vault4).where(inArray(vault4.id, ids));
+  }
+  /**
    * 根据 service/account 查找记录 (大小写不敏感，自动 trim)
    * 只匹配未被软删除的记录
    */
@@ -71625,10 +71412,22 @@ var VaultRepository = class {
   async update(id, data, expectedUpdatedAt) {
     const existing = await this.findById(id);
     if (!existing) return void 0;
-    if (expectedUpdatedAt !== void 0 && existing.updatedAt !== expectedUpdatedAt) {
+    if (expectedUpdatedAt !== void 0 && existing.updatedAt && existing.updatedAt > expectedUpdatedAt) {
       return void 0;
     }
-    await this.db.update(vault4).set({ ...data, updatedAt: Date.now() }).where(eq(vault4.id, id));
+    const newVersion = (existing.syncVersion || 0) + 1;
+    await this.db.update(vault4).set({ ...data, syncVersion: newVersion }).where(eq(vault4.id, id));
+    return await this.findById(id);
+  }
+  /**
+   * BYOS 专用更新通道：无条件写入 (跨端同步引擎专用)
+   * LWW 等冲突校验已在业务层解决，此处只负责高效落库并承接跨端传来的准确 syncVersion
+   */
+  async byosSyncUpdate(id, data) {
+    const existing = await this.findById(id);
+    if (!existing) return void 0;
+    const newVersion = data.syncVersion !== void 0 ? data.syncVersion : (existing.syncVersion || 0) + 1;
+    await this.db.update(vault4).set({ ...data, syncVersion: newVersion }).where(eq(vault4.id, id));
     return await this.findById(id);
   }
   /**
@@ -71652,22 +71451,55 @@ var VaultRepository = class {
     }
   }
   /**
-   * 删除单个 item (支持乐观锁校验)
+   * 记录物理删除墓碑 (Tombstones)
+   */
+  async addTombstones(ids) {
+    if (!ids || ids.length === 0 || !this.db) return;
+    const now = Date.now();
+    const BATCH_SIZE = 50;
+    for (let i2 = 0; i2 < ids.length; i2 += BATCH_SIZE) {
+      const chunk = ids.slice(i2, i2 + BATCH_SIZE);
+      const records = chunk.map((id) => ({ id, purgedAt: now }));
+      try {
+        if (typeof this.db.insert === "function") {
+          await this.db.insert(vaultTombstone4).values(records).onConflictDoNothing();
+        }
+      } catch (_) {
+      }
+    }
+  }
+  /**
+   * 查询自 sinceTimestamp 以来所有被物理硬删除的墓碑 ID 列表 (增量水位线专用)
+   */
+  async findPurgedSince(sinceTimestamp, limitVal = 500, offsetVal = 0) {
+    if (!this.db || typeof this.db.select !== "function") return [];
+    if (!sinceTimestamp || sinceTimestamp <= 0) return [];
+    try {
+      const rows = await this.db.select({ id: vaultTombstone4.id }).from(vaultTombstone4).where(sql`${vaultTombstone4.purgedAt} > ${sinceTimestamp}`).orderBy(desc(vaultTombstone4.purgedAt)).limit(limitVal).offset(offsetVal);
+      return (rows || []).map((r2) => r2.id);
+    } catch (_) {
+      return [];
+    }
+  }
+  /**
+   * 删除单个 item (支持乐观锁校验与墓碑联动)
    */
   async delete(id, expectedUpdatedAt) {
     const existing = await this.findById(id);
     if (!existing) return false;
-    if (expectedUpdatedAt !== void 0 && existing.updatedAt !== expectedUpdatedAt) {
+    if (expectedUpdatedAt !== void 0 && existing.updatedAt && existing.updatedAt > expectedUpdatedAt) {
       return false;
     }
+    await this.addTombstones([id]);
     await this.db.delete(vault4).where(eq(vault4.id, id));
     return true;
   }
   /**
-   * 批量删除
+   * 批量删除 (带墓碑联动)
    */
   async batchDelete(ids) {
     if (!ids || ids.length === 0) return 0;
+    await this.addTombstones(ids);
     let deletedCount = 0;
     const BATCH_SIZE = 50;
     for (let i2 = 0; i2 < ids.length; i2 += BATCH_SIZE) {
@@ -71692,17 +71524,22 @@ var VaultRepository = class {
     const BATCH = 50;
     for (let i2 = 0; i2 < ids.length; i2 += BATCH) {
       const chunk = ids.slice(i2, i2 + BATCH);
-      await this.db.update(vault4).set({ deletedAt: timestamp3, sortOrder: 0 }).where(inArray(vault4.id, chunk));
+      await this.db.update(vault4).set({ deletedAt: timestamp3, sortOrder: 0, updatedAt: timestamp3 }).where(inArray(vault4.id, chunk));
       count += chunk.length;
     }
     return count;
   }
   /**
-   * TRASH: 清空回收站
+   * TRASH: 清空回收站 (自动记录墓碑)
    */
   async emptyTrashPhysical() {
+    const trashed = await this.findDeleted();
+    const ids = trashed.map((t2) => t2.id);
+    if (ids.length > 0) {
+      await this.addTombstones(ids);
+    }
     await this.db.delete(vault4).where(sql`${vault4.deletedAt} IS NOT NULL`);
-    return 1;
+    return ids.length;
   }
   /**
    * TRASH: 统计软删除的数量
@@ -71713,8 +71550,330 @@ var VaultRepository = class {
   }
 };
 
+// src/features/vault/byosSyncService.ts
+var ByosSyncService = class {
+  repository;
+  env;
+  encryptionKey;
+  constructor(env, repository) {
+    this.env = env;
+    this.repository = repository;
+    if (!env.ENCRYPTION_KEY) {
+      throw new AppError("missing_encryption_key", 500);
+    }
+    this.encryptionKey = env.ENCRYPTION_KEY;
+  }
+  normalizeSignature(service, account) {
+    return `${(service || "").toString().trim().toLowerCase()}:${(account || "").toString().trim().toLowerCase()}`;
+  }
+  async batchDeleteAccounts(ids) {
+    if (!ids || ids.length === 0) throw new AppError("no_account_ids", 400);
+    const count = await this.repository.batchDelete(ids);
+    return { count };
+  }
+  async syncUpsertAccount(userId, id, data) {
+    const normalized = normalizeOtpAccount(data);
+    const { service, account, algorithm, digits, period, type, counter, category } = normalized;
+    let secret = normalized.secret;
+    if (!service || !account || !secret) {
+      throw new AppError("invalid_secret_format", 400);
+    }
+    const isZeroKnowledge = secret.startsWith("nodeauth:");
+    if (type !== "steam" && !isZeroKnowledge && !validateBase32Secret(secret)) {
+      throw new AppError("invalid_secret_format", 400);
+    }
+    const finalSecret = await encryptField(secret, this.encryptionKey);
+    const clientTime = data.updatedAt || data.createdAt || Date.now();
+    const clientCreatedAt = data.createdAt || Date.now();
+    const existingById = await this.repository.findById(id);
+    if (existingById) {
+      if (existingById.updatedAt && existingById.updatedAt > clientTime) {
+        return existingById;
+      }
+      await this.repository.update(id, {
+        service,
+        account,
+        category: category || "",
+        secret: finalSecret,
+        algorithm,
+        type,
+        digits,
+        period,
+        counter,
+        updatedAt: clientTime,
+        updatedBy: userId,
+        deletedAt: null
+      });
+      return await this.repository.findById(id);
+    }
+    const existingByServiceAccount = await this.repository.findByServiceAccountAny(service, account);
+    if (existingByServiceAccount) {
+      if (existingByServiceAccount.deletedAt !== null) {
+        await this.repository.update(existingByServiceAccount.id, {
+          service,
+          account,
+          category: category || "",
+          secret: finalSecret,
+          algorithm,
+          type,
+          digits,
+          period,
+          counter,
+          updatedAt: clientTime,
+          updatedBy: userId,
+          deletedAt: null
+        });
+        return await this.repository.findById(existingByServiceAccount.id);
+      }
+      throw new AppError("account_exists", 409);
+    }
+    const maxSort = await this.repository.getMaxSortOrder();
+    const created = await this.repository.create({
+      id,
+      service,
+      account,
+      category: category || "",
+      secret: finalSecret,
+      algorithm,
+      type,
+      digits,
+      period,
+      counter,
+      sortOrder: maxSort + 1,
+      createdAt: clientCreatedAt,
+      createdBy: userId,
+      updatedAt: clientTime,
+      updatedBy: userId,
+      syncVersion: 0,
+      extraData: data.extraData || null
+    });
+    return created;
+  }
+  async syncUpdateAccount(userId, id, data) {
+    const existing = await this.repository.findById(id);
+    if (!existing) throw new AppError("account_not_found", 404);
+    const clientTime = data.updatedAt || Date.now();
+    if (existing.updatedAt && existing.updatedAt > clientTime) {
+      throw new AppError("conflict_detected", 409);
+    }
+    const normalized = normalizeOtpAccount({ ...existing, ...data });
+    let finalSecret = existing.secret;
+    if (data.secret !== void 0) {
+      const isZeroKnowledge = data.secret && data.secret.startsWith("nodeauth:");
+      if (!data.secret || !isZeroKnowledge && normalized.type !== "steam" && !validateBase32Secret(data.secret)) {
+        throw new AppError("invalid_secret_format", 400);
+      }
+      finalSecret = await encryptField(data.secret, this.encryptionKey);
+    }
+    const updatedItem = {
+      service: normalized.service,
+      account: normalized.account,
+      secret: finalSecret,
+      algorithm: normalized.algorithm,
+      type: normalized.type,
+      digits: normalized.digits,
+      period: normalized.period,
+      counter: normalized.counter,
+      category: normalized.category || "",
+      extraData: data.extraData !== void 0 ? data.extraData : existing.extraData,
+      syncVersion: data.syncVersion !== void 0 ? data.syncVersion : existing.syncVersion,
+      updatedAt: clientTime,
+      updatedBy: userId
+    };
+    const success = await this.repository.byosSyncUpdate(id, updatedItem);
+    if (!success) {
+      throw new AppError("conflict_detected", 409);
+    }
+  }
+  async batchSync(userId, actions = [], sinceTimestamp = 0, offsetUpdates = 0, offsetPurged = 0, skipPull = false) {
+    const results = [];
+    if (Array.isArray(actions) && actions.length > 0) {
+      const pureForceDeleteIds = actions.filter((a) => a.type === "delete" && a.data?.force).map((a) => a.id);
+      if (pureForceDeleteIds.length > 0) {
+        try {
+          await this.batchDeleteAccounts(pureForceDeleteIds);
+        } catch (e2) {
+        }
+      }
+      const softDeleteActions = actions.filter((a) => a.type === "delete" && !a.data?.force);
+      const conflictSoftDeleteIds = [];
+      if (softDeleteActions.length > 0) {
+        try {
+          const deleteIds = softDeleteActions.map((a) => a.id);
+          const existingItems = await this.repository.findByIds(deleteIds);
+          const existingMap = new Map(existingItems.map((e2) => [e2.id, e2]));
+          const validUpdates = [];
+          for (const action of softDeleteActions) {
+            const id = action.id;
+            const existing = existingMap.get(id);
+            if (!existing) continue;
+            const clientTime = action.data?.updatedAt || action.data?.deletedAt;
+            if (clientTime !== void 0 && existing.updatedAt && existing.updatedAt > clientTime) {
+              conflictSoftDeleteIds.push(id);
+              continue;
+            }
+            validUpdates.push({
+              id,
+              data: {
+                deletedAt: clientTime || Date.now(),
+                updatedAt: clientTime || Date.now(),
+                updatedBy: userId
+              }
+            });
+          }
+          if (validUpdates.length > 0) {
+            await this.repository.batchUpdate(validUpdates);
+          }
+        } catch (e2) {
+        }
+      }
+      for (const action of actions) {
+        const { type, id, data } = action;
+        try {
+          let res;
+          switch (type) {
+            case "create":
+              try {
+                res = await this.syncUpsertAccount(userId, id, data);
+                results.push({ success: true, type, id: action.id, serverId: res.id });
+              } catch (e2) {
+                if (e2 instanceof AppError && e2.statusCode === 409) {
+                  const existing = await this.repository.findByServiceAccountAny(data.service, data.account);
+                  if (existing) {
+                    results.push({ success: true, type, id: action.id, serverId: existing.id });
+                  } else {
+                    throw e2;
+                  }
+                } else {
+                  throw e2;
+                }
+              }
+              break;
+            case "update":
+              try {
+                await this.syncUpdateAccount(userId, id, data);
+              } catch (e2) {
+                if (e2.statusCode === 409) {
+                  results.push({ success: true, type, id: action.id });
+                } else {
+                  throw e2;
+                }
+              }
+              results.push({ success: true, type, id: action.id });
+              break;
+            case "delete":
+              if (data?.force && pureForceDeleteIds.includes(id)) {
+              } else if (!data?.force && softDeleteActions.some((a) => a.id === id)) {
+                if (conflictSoftDeleteIds.includes(id)) {
+                  throw new AppError("conflict_detected", 409);
+                }
+              } else {
+                try {
+                  const success = await this.repository.delete(id, data?.force ? void 0 : data?.updatedAt);
+                  if (!success) {
+                    const exist = await this.repository.findById(id);
+                    throw new AppError(exist ? "conflict_detected" : "account_not_found", exist ? 409 : 404);
+                  }
+                } catch (e2) {
+                  if (e2 instanceof AppError && e2.statusCode === 404) {
+                  } else {
+                    throw e2;
+                  }
+                }
+              }
+              results.push({ success: true, type, id });
+              break;
+            case "reorder":
+              if (data && Array.isArray(data.ids) && data.ids.length > 0) {
+                const maxSort = await this.repository.getMaxSortOrder();
+                const baseOrder = Math.max(maxSort, data.ids.length * 1e3) + data.ids.length * 1e3;
+                const updates2 = data.ids.map((item_id, index2) => ({
+                  id: item_id,
+                  sortOrder: baseOrder - index2 * 1e3
+                }));
+                await this.repository.updateSortOrders(updates2);
+              }
+              results.push({ success: true, type, id });
+              break;
+            default:
+              results.push({ success: false, type, id, error: "unknown_action" });
+          }
+        } catch (e2) {
+          if (e2.statusCode === 409 || e2.statusCode === 404) {
+            results.push({ success: true, type, id });
+          } else {
+            const errorCode = e2.code || "sync_error";
+            results.push({
+              success: false,
+              type,
+              id,
+              error: e2.message,
+              code: errorCode
+            });
+          }
+        }
+      }
+    }
+    let updatedRecords = [];
+    let purgedIds = [];
+    const limit = 500;
+    if (!skipPull) {
+      try {
+        if (sinceTimestamp !== -1) {
+          if (this.repository && typeof this.repository.findUpdatedSince === "function") {
+            updatedRecords = await this.repository.findUpdatedSince(sinceTimestamp, limit, offsetUpdates);
+          }
+          if (this.repository && typeof this.repository.findPurgedSince === "function") {
+            purgedIds = await this.repository.findPurgedSince(sinceTimestamp, limit, offsetPurged);
+          }
+        }
+      } catch (_) {
+        updatedRecords = [];
+        purgedIds = [];
+      }
+    }
+    const updates = Array.isArray(updatedRecords) ? await Promise.all(updatedRecords.map(async (r2) => {
+      let secret = r2.secret;
+      if (secret) {
+        const res = await decryptField(secret, this.encryptionKey);
+        if (res.success) {
+          secret = res.data;
+        }
+      }
+      return {
+        id: r2.id,
+        service: r2.service,
+        account: r2.account,
+        category: r2.category || null,
+        secret,
+        digits: r2.digits || 6,
+        period: r2.period || 30,
+        type: r2.type || "totp",
+        algorithm: r2.algorithm || "SHA1",
+        counter: r2.counter || 0,
+        createdAt: r2.createdAt,
+        createdBy: r2.createdBy,
+        updatedAt: r2.updatedAt,
+        updatedBy: r2.updatedBy,
+        sortOrder: r2.sortOrder || 0,
+        deletedAt: r2.deletedAt || null,
+        syncVersion: r2.syncVersion || 0,
+        extraData: r2.extraData || null
+      };
+    })) : [];
+    const hasMore = updatedRecords.length === limit || purgedIds.length === limit;
+    return {
+      results,
+      serverTime: Date.now(),
+      updates,
+      purgedIds,
+      hasMore
+    };
+  }
+};
+
 // src/features/vault/vaultRoutes.ts
-var vault5 = new Hono2();
+var vault5 = new Hono3();
 var getService2 = (c) => {
   const repo = new VaultRepository(c.env.DB);
   return new VaultService(c.env, repo);
@@ -71722,6 +71881,10 @@ var getService2 = (c) => {
 var getTrashService = (c) => {
   const repo = new VaultRepository(c.env.DB);
   return new TrashService(c.env, repo);
+};
+var getByosSyncService = (c) => {
+  const repo = new VaultRepository(c.env.DB);
+  return new ByosSyncService(c.env, repo);
 };
 vault5.use("/*", authMiddleware);
 vault5.get("/", async (c) => {
@@ -71882,6 +72045,25 @@ vault5.post("/sync", async (c) => {
   const service = getService2(c);
   const results = await service.batchSync(user.email || user.id, actions);
   return c.json({ success: true, results });
+});
+vault5.post("/byos-sync", async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json();
+  const actions = Array.isArray(body?.actions) ? body.actions : [];
+  const since = typeof body?.since === "number" ? body.since : 0;
+  const offsetUpdates = typeof body?.offsetUpdates === "number" ? body.offsetUpdates : 0;
+  const offsetPurged = typeof body?.offsetPurged === "number" ? body.offsetPurged : 0;
+  const skipPull = body?.skipPull === true;
+  const syncService = getByosSyncService(c);
+  const responseData = await syncService.batchSync(user.email || user.id, actions, since, offsetUpdates, offsetPurged, skipPull);
+  return c.json({
+    success: true,
+    results: responseData.results,
+    updates: responseData.updates,
+    purgedIds: responseData.purgedIds,
+    serverTime: responseData.serverTime,
+    hasMore: responseData.hasMore
+  });
 });
 vault5.post("/migrate-crypto", async (c) => {
   return c.json({ success: true, message: "\u4E0D\u518D\u652F\u6301\u65E7\u7248\u76D0\u503C\u8FC1\u79FB\u903B\u8F91\uFF0C\u6240\u6709\u6570\u636E\u9ED8\u8BA4\u5DF2\u4F7F\u7528\u65B0\u7248\u903B\u8F91", migrated: 0, remaining: 0 });
@@ -72353,6 +72535,57 @@ function generateBasicAuthHeader(username, password) {
 function generateTokenAuthHeader(token) {
   return `${token.token_type} ${token.access_token}`;
 }
+
+// node_modules/webdav/dist/node/types.js
+var AuthType;
+(function(AuthType2) {
+  AuthType2["Auto"] = "auto";
+  AuthType2["Digest"] = "digest";
+  AuthType2["None"] = "none";
+  AuthType2["Password"] = "password";
+  AuthType2["Token"] = "token";
+})(AuthType || (AuthType = {}));
+var ErrorCode;
+(function(ErrorCode2) {
+  ErrorCode2["DataTypeNoLength"] = "data-type-no-length";
+  ErrorCode2["InvalidAuthType"] = "invalid-auth-type";
+  ErrorCode2["InvalidOutputFormat"] = "invalid-output-format";
+  ErrorCode2["LinkUnsupportedAuthType"] = "link-unsupported-auth";
+  ErrorCode2["InvalidUpdateRange"] = "invalid-update-range";
+  ErrorCode2["NotSupported"] = "not-supported";
+})(ErrorCode || (ErrorCode = {}));
+
+// node_modules/webdav/dist/node/auth/index.js
+function setupAuth(context, username, password, oauthToken, ha1) {
+  switch (context.authType) {
+    case AuthType.Auto:
+      if (username && password) {
+        context.headers.Authorization = generateBasicAuthHeader(username, password);
+      }
+      break;
+    case AuthType.Digest:
+      context.digest = createDigestContext(username, password, ha1);
+      break;
+    case AuthType.None:
+      break;
+    case AuthType.Password:
+      context.headers.Authorization = generateBasicAuthHeader(username, password);
+      break;
+    case AuthType.Token:
+      context.headers.Authorization = generateTokenAuthHeader(oauthToken);
+      break;
+    default:
+      throw new Layerr({
+        info: {
+          code: ErrorCode.InvalidAuthType
+        }
+      }, `Invalid auth type: ${context.authType}`);
+  }
+}
+
+// node_modules/webdav/dist/node/request.js
+import { Agent as HTTPAgent } from "http";
+import { Agent as HTTPSAgent } from "https";
 
 // node_modules/node-fetch/src/index.js
 import http3 from "node:http";
@@ -73635,57 +73868,6 @@ function fixResponseChunkedTransferBadEnding(request2, errorCallback) {
   });
 }
 
-// node_modules/webdav/dist/node/types.js
-var AuthType;
-(function(AuthType2) {
-  AuthType2["Auto"] = "auto";
-  AuthType2["Digest"] = "digest";
-  AuthType2["None"] = "none";
-  AuthType2["Password"] = "password";
-  AuthType2["Token"] = "token";
-})(AuthType || (AuthType = {}));
-var ErrorCode;
-(function(ErrorCode2) {
-  ErrorCode2["DataTypeNoLength"] = "data-type-no-length";
-  ErrorCode2["InvalidAuthType"] = "invalid-auth-type";
-  ErrorCode2["InvalidOutputFormat"] = "invalid-output-format";
-  ErrorCode2["LinkUnsupportedAuthType"] = "link-unsupported-auth";
-  ErrorCode2["InvalidUpdateRange"] = "invalid-update-range";
-  ErrorCode2["NotSupported"] = "not-supported";
-})(ErrorCode || (ErrorCode = {}));
-
-// node_modules/webdav/dist/node/auth/index.js
-function setupAuth(context, username, password, oauthToken, ha1) {
-  switch (context.authType) {
-    case AuthType.Auto:
-      if (username && password) {
-        context.headers.Authorization = generateBasicAuthHeader(username, password);
-      }
-      break;
-    case AuthType.Digest:
-      context.digest = createDigestContext(username, password, ha1);
-      break;
-    case AuthType.None:
-      break;
-    case AuthType.Password:
-      context.headers.Authorization = generateBasicAuthHeader(username, password);
-      break;
-    case AuthType.Token:
-      context.headers.Authorization = generateTokenAuthHeader(oauthToken);
-      break;
-    default:
-      throw new Layerr({
-        info: {
-          code: ErrorCode.InvalidAuthType
-        }
-      }, `Invalid auth type: ${context.authType}`);
-  }
-}
-
-// node_modules/webdav/dist/node/request.js
-import { Agent as HTTPAgent } from "http";
-import { Agent as HTTPSAgent } from "https";
-
 // node_modules/hot-patcher/dist/functions.js
 function sequence(...methods) {
   if (methods.length === 0) {
@@ -73964,9 +74146,9 @@ function mergeObjects(obj1, obj2) {
 // node_modules/webdav/dist/node/tools/headers.js
 function convertResponseHeaders(headers) {
   const output = {};
-  for (const key of headers.keys()) {
-    output[key] = headers.get(key);
-  }
+  headers.forEach((value, key) => {
+    output[key] = value;
+  });
   return output;
 }
 function mergeHeaders(...headerPayloads) {
@@ -74211,6 +74393,8 @@ var commaPattern = /\\,/g;
 var periodPattern = /\\\./g;
 var EXPANSION_MAX = 1e5;
 var EXPANSION_MAX_LENGTH = 4e6;
+var EXPANSION_MAX_DEPTH = 1e3;
+var EXPANSION_MAX_REWRITES = 1e3;
 function numeric3(str) {
   return !isNaN(str) ? parseInt(str, 10) : str.charCodeAt(0);
 }
@@ -74220,36 +74404,44 @@ function escapeBraces(str) {
 function unescapeBraces(str) {
   return str.replace(escSlashPattern, "\\").replace(escOpenPattern, "{").replace(escClosePattern, "}").replace(escCommaPattern, ",").replace(escPeriodPattern, ".");
 }
+function pushAll(target, items) {
+  for (let i2 = 0; i2 < items.length; i2++) {
+    target.push(items[i2]);
+  }
+}
 function parseCommaParts(str) {
-  if (!str) {
-    return [""];
-  }
   const parts = [];
-  const m2 = balanced("{", "}", str);
-  if (!m2) {
-    return str.split(",");
+  let carry = "";
+  for (; ; ) {
+    const m2 = balanced("{", "}", str);
+    if (!m2) {
+      const tail = str.split(",");
+      tail[0] = carry + tail[0];
+      pushAll(parts, tail);
+      return parts;
+    }
+    const { pre, body, post } = m2;
+    const p = pre.split(",");
+    p[0] = carry + p[0];
+    p[p.length - 1] += "{" + body + "}";
+    if (!post.length) {
+      pushAll(parts, p);
+      return parts;
+    }
+    carry = p.pop();
+    pushAll(parts, p);
+    str = post;
   }
-  const { pre, body, post } = m2;
-  const p = pre.split(",");
-  p[p.length - 1] += "{" + body + "}";
-  const postParts = parseCommaParts(post);
-  if (post.length) {
-    ;
-    p[p.length - 1] += postParts.shift();
-    p.push.apply(p, postParts);
-  }
-  parts.push.apply(parts, p);
-  return parts;
 }
 function expand(str, options = {}) {
   if (!str) {
     return [];
   }
-  const { max = EXPANSION_MAX, maxLength = EXPANSION_MAX_LENGTH } = options;
+  const { max = EXPANSION_MAX, maxLength = EXPANSION_MAX_LENGTH, maxDepth = EXPANSION_MAX_DEPTH, maxRewrites = EXPANSION_MAX_REWRITES } = options;
   if (str.slice(0, 2) === "{}") {
     str = "\\{\\}" + str.slice(2);
   }
-  return expand_(escapeBraces(str), max, maxLength, true).map(unescapeBraces);
+  return expand_(escapeBraces(str), max, maxLength, maxDepth, 0, maxRewrites, true).map(unescapeBraces);
 }
 function embrace(str) {
   return "{" + str + "}";
@@ -74327,8 +74519,12 @@ function expandSequence(body, isAlphaSequence, max, maxLength) {
   }
   return N;
 }
-function expand_(str, max, maxLength, isTop) {
+function expand_(str, max, maxLength, maxDepth, depth, maxRewrites, isTop) {
+  if (depth > maxDepth) {
+    return [str];
+  }
   let acc = [""];
+  let rewrites = 0;
   let dropEmpties = false;
   let firstGroup = true;
   for (; ; ) {
@@ -74350,7 +74546,8 @@ function expand_(str, max, maxLength, isTop) {
     const isSequence = isNumericSequence || isAlphaSequence;
     const isOptions = m2.body.indexOf(",") >= 0;
     if (!isSequence && !isOptions) {
-      if (m2.post.match(/,(?!,).*\}/)) {
+      if (rewrites < maxRewrites && m2.post.match(/,(?!,).*\}/)) {
+        rewrites++;
         str = m2.pre + "{" + m2.body + escClose + m2.post;
         isTop = true;
         continue;
@@ -74367,7 +74564,7 @@ function expand_(str, max, maxLength, isTop) {
     } else {
       let n = parseCommaParts(m2.body);
       if (n.length === 1 && n[0] !== void 0) {
-        n = expand_(n[0], max, maxLength, false).map(embrace);
+        n = expand_(n[0], max, maxLength, maxDepth, depth + 1, maxRewrites, false).map(embrace);
         if (n.length === 1) {
           acc = combine(acc, pre + n[0], [""], max, maxLength, dropEmpties && !m2.post.length);
           if (!m2.post.length)
@@ -74385,7 +74582,7 @@ function expand_(str, max, maxLength, isTop) {
       values = [];
       let valuesLength = 0;
       outer: for (let j = 0; j < n.length; j++) {
-        const expanded = expand_(n[j], max, maxLength, false);
+        const expanded = expand_(n[j], max, maxLength, maxDepth, depth + 1, maxRewrites, false);
         for (let k = 0; k < expanded.length; k++) {
           const v = expanded[k];
           if (dropsEmpties && !v)
@@ -76323,9 +76520,55 @@ function readAttributeStr(xmlData, i2) {
     tagClosed
   };
 }
-var validAttrStrRegxp = new RegExp(`(\\s*)([^\\s=]+)(\\s*=)?(\\s*(['"])(([\\s\\S])*?)\\5)?`, "g");
+function scanAttributeTokens(attrStr) {
+  const tokens = [];
+  const len = attrStr.length;
+  let i2 = 0;
+  while (i2 < len) {
+    const tokenStart = i2;
+    while (i2 < len && isWhiteSpace(attrStr[i2])) i2++;
+    if (i2 >= len) break;
+    if (attrStr[i2] === "=") {
+      i2 = tokenStart + 1;
+      continue;
+    }
+    const leadingWs = attrStr.slice(tokenStart, i2);
+    const nameStart = i2;
+    while (i2 < len && !isWhiteSpace(attrStr[i2]) && attrStr[i2] !== "=") i2++;
+    const name = attrStr.slice(nameStart, i2);
+    let equalsGroup;
+    let j = i2;
+    while (j < len && isWhiteSpace(attrStr[j])) j++;
+    if (j < len && attrStr[j] === "=") {
+      equalsGroup = attrStr.slice(i2, j + 1);
+      i2 = j + 1;
+    }
+    let quoteChar;
+    let value;
+    let k = i2;
+    while (k < len && isWhiteSpace(attrStr[k])) k++;
+    if (k < len && (attrStr[k] === '"' || attrStr[k] === "'")) {
+      const valueStart = k + 1;
+      const closeIdx = attrStr.indexOf(attrStr[k], valueStart);
+      if (closeIdx !== -1) {
+        quoteChar = attrStr[k];
+        value = attrStr.slice(valueStart, closeIdx);
+        i2 = closeIdx + 1;
+      }
+    }
+    const token = { startIndex: tokenStart };
+    token[1] = leadingWs;
+    token[2] = name;
+    token[3] = equalsGroup;
+    token[4] = quoteChar !== void 0 ? true : void 0;
+    token[5] = quoteChar;
+    token[6] = value;
+    tokens.push(token);
+  }
+  return tokens;
+}
 function validateAttributeString(attrStr, options) {
-  const matches = getAllMatches(attrStr, validAttrStrRegxp);
+  const matches = scanAttributeTokens(attrStr);
   const attrNames = {};
   for (let i2 = 0; i2 < matches.length; i2++) {
     if (matches[i2][1].length === 0) {
@@ -77058,8 +77301,17 @@ var XmlNode = class {
     } else {
       this.child.push({ [node.tagname]: node.child });
     }
+    this.addStartIndex(startIndex);
+  }
+  addStartIndex(startIndex) {
     if (startIndex !== void 0) {
       this.child[this.child.length - 1][METADATA_SYMBOL] = { startIndex };
+    }
+  }
+  addEndIndex(endIndex) {
+    const lastChild = this.child[this.child.length - 1];
+    if (lastChild !== void 0 && lastChild[METADATA_SYMBOL] !== void 0 && lastChild[METADATA_SYMBOL].endIndex === void 0) {
+      lastChild[METADATA_SYMBOL].endIndex = endIndex;
     }
   }
   /** symbol used for metadata */
@@ -77113,8 +77365,19 @@ var DocTypeReader = class {
       i2 = i2 + 9;
       let angleBracketsCount = 1;
       let hasBody = false, comment = false;
+      let quoteChar = null;
       let exp = "";
       for (; i2 < xmlData.length; i2++) {
+        if (quoteChar !== null) {
+          if (xmlData[i2] === quoteChar) quoteChar = null;
+          exp += xmlData[i2];
+          continue;
+        }
+        if (!hasBody && !comment && (xmlData[i2] === '"' || xmlData[i2] === "'")) {
+          quoteChar = xmlData[i2];
+          exp += xmlData[i2];
+          continue;
+        }
         if (xmlData[i2] === "<" && !comment) {
           if (hasBody && hasSeq(xmlData, "!ENTITY", i2)) {
             i2 += 7;
@@ -77161,7 +77424,7 @@ var DocTypeReader = class {
           exp += xmlData[i2];
         }
       }
-      if (angleBracketsCount !== 0) {
+      if (quoteChar !== null || angleBracketsCount !== 0) {
         throw new Error(`Unclosed DOCTYPE`);
       }
     } else {
@@ -77708,7 +77971,9 @@ function resolveEnotation(str, trimmedStr, options) {
 }
 function trimZeros(numStr) {
   if (numStr && numStr.indexOf(".") !== -1) {
-    numStr = numStr.replace(/0+$/, "");
+    let end = numStr.length;
+    while (end > 0 && numStr.charCodeAt(end - 1) === 48) end--;
+    numStr = numStr.slice(0, end);
     if (numStr === ".") numStr = "0";
     else if (numStr[0] === ".") numStr = "0" + numStr;
     else if (numStr[numStr.length - 1] === ".") numStr = numStr.substring(0, numStr.length - 1);
@@ -79556,7 +79821,10 @@ var parseXml = function(xmlData) {
         }
         this.matcher.pop();
         this.isCurrentNodeStopNode = false;
-        currentNode = this.tagsNodeStack.pop();
+        currentNode = this.tagsNodeStack.pop() || xmlObj;
+        if (options.captureMetaData && currentNode) {
+          currentNode.addEndIndex(closeIndex + 1);
+        }
         textData = "";
         i2 = closeIndex;
       } else if (c1 === 63) {
@@ -79577,6 +79845,9 @@ var parseXml = function(xmlData) {
             childNode[":@"] = attsMap;
           }
           this.addChild(currentNode, childNode, this.readonlyMatcher, i2);
+          if (options.captureMetaData) {
+            currentNode.addEndIndex(tagData.closeIndex + 2);
+          }
         }
         i2 = tagData.closeIndex + 1;
       } else if (c1 === 33 && xmlData.charCodeAt(i2 + 2) === 45 && xmlData.charCodeAt(i2 + 3) === 45) {
@@ -79678,6 +79949,9 @@ var parseXml = function(xmlData) {
           this.matcher.pop();
           this.isCurrentNodeStopNode = false;
           this.addChild(currentNode, childNode, this.readonlyMatcher, startIndex);
+          if (options.captureMetaData) {
+            currentNode.addEndIndex(i2 + 1);
+          }
         } else {
           if (isSelfClosing) {
             ({ tagName, tagExp } = transformTagName(options.transformTagName, tagName, tagExp, options));
@@ -79686,6 +79960,9 @@ var parseXml = function(xmlData) {
               childNode[":@"] = prefixedAttrs;
             }
             this.addChild(currentNode, childNode, this.readonlyMatcher, startIndex);
+            if (options.captureMetaData) {
+              currentNode.addEndIndex(closeIndex + 1);
+            }
             this.matcher.pop();
             this.isCurrentNodeStopNode = false;
           } else if (options.unpairedTagsSet.has(tagName)) {
@@ -79694,6 +79971,9 @@ var parseXml = function(xmlData) {
               childNode[":@"] = prefixedAttrs;
             }
             this.addChild(currentNode, childNode, this.readonlyMatcher, startIndex);
+            if (options.captureMetaData) {
+              currentNode.addEndIndex(result.closeIndex + 1);
+            }
             this.matcher.pop();
             this.isCurrentNodeStopNode = false;
             i2 = result.closeIndex;
@@ -80044,7 +80324,11 @@ var XMLParser = class {
    */
   parse(xmlData, validationOption) {
     if (typeof xmlData !== "string" && xmlData.toString) {
-      xmlData = xmlData.toString();
+      if (xmlData instanceof Uint8Array && !(typeof Buffer !== "undefined" && Buffer.isBuffer(xmlData))) {
+        xmlData = new TextDecoder("utf-8", { ignoreBOM: true }).decode(xmlData);
+      } else {
+        xmlData = xmlData.toString();
+      }
     } else if (typeof xmlData !== "string") {
       throw new Error("XML data is accepted in String or Bytes[] form.");
     }
@@ -80843,25 +81127,35 @@ var PropertyType;
   PropertyType2["Object"] = "object";
   PropertyType2["Original"] = "original";
 })(PropertyType || (PropertyType = {}));
+function stripPrefix(name) {
+  const colonIdx = name.indexOf(":");
+  return colonIdx === -1 ? name : name.slice(colonIdx + 1);
+}
+function isXmlnsAttribute(name) {
+  return name === "xmlns" || name.startsWith("xmlns:");
+}
 function toJPathString(jPath) {
   if (typeof jPath === "string") {
     return jPath;
   }
-  return jPath.toString(".", false);
+  return jPath.toArray().map(stripPrefix).join(".");
 }
-function getParser({ attributeNamePrefix, attributeParsers, entityDecoder: entityDecoderOptions, tagParsers }) {
+function getParser({ attributeNamePrefix, attributeParsers, clarkNotationProps, entityDecoder: entityDecoderOptions, tagParsers }) {
   const parserOptions = {
     allowBooleanAttributes: true,
     attributeNamePrefix,
     textNodeName: "text",
     ignoreAttributes: false,
-    removeNSPrefix: true,
+    removeNSPrefix: !clarkNotationProps,
     jPath: false,
     numberParseOptions: {
       hex: true,
       leadingZeros: false
     },
-    attributeValueProcessor(_, attrValue, jPath) {
+    attributeValueProcessor(attrName, attrValue, jPath) {
+      if (attributeParsers.length === 0 || isXmlnsAttribute(attrName)) {
+        return attrValue;
+      }
       const pathStr = toJPathString(jPath);
       for (const processor of attributeParsers) {
         try {
@@ -80875,6 +81169,9 @@ function getParser({ attributeNamePrefix, attributeParsers, entityDecoder: entit
       return attrValue;
     },
     tagValueProcessor(tagName, tagValue, jPath) {
+      if (tagParsers.length === 0) {
+        return tagValue;
+      }
       const pathStr = toJPathString(jPath);
       for (const processor of tagParsers) {
         try {
@@ -80942,6 +81239,139 @@ function normaliseResult(result) {
   import_nested_property.default.set(output, "multistatus.response", import_nested_property.default.get(output, "multistatus.response").map((response) => normaliseResponse(response)));
   return output;
 }
+var STRUCTURAL_KEYS = /* @__PURE__ */ new Set([
+  "multistatus",
+  "response",
+  "propstat",
+  "prop",
+  "status",
+  "href",
+  "responsedescription"
+]);
+function isPlainObject2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function applyClarkNotation(root, attrPrefix) {
+  if (!isPlainObject2(root) && !Array.isArray(root))
+    return;
+  const xmlnsKey = `${attrPrefix}xmlns`;
+  const xmlnsPrefixedKey = `${xmlnsKey}:`;
+  const xmlnsPrefixedKeyLen = xmlnsPrefixedKey.length;
+  const TEXT_KEY = "text";
+  const EMPTY_SCOPE = /* @__PURE__ */ new Map();
+  function isXmlnsAttr(key) {
+    return key === xmlnsKey || key.length > xmlnsPrefixedKeyLen && key.startsWith(xmlnsPrefixedKey);
+  }
+  function extendScope(obj, parent) {
+    let scope = null;
+    for (const key of Object.keys(obj)) {
+      if (key === xmlnsKey) {
+        if (!scope)
+          scope = new Map(parent);
+        scope.set("", obj[key]);
+      } else if (key.length > xmlnsPrefixedKeyLen && key.startsWith(xmlnsPrefixedKey)) {
+        if (!scope)
+          scope = new Map(parent);
+        scope.set(key.slice(xmlnsPrefixedKeyLen), obj[key]);
+      }
+    }
+    return scope ?? parent;
+  }
+  function cleanPropValue(raw2) {
+    if (Array.isArray(raw2))
+      return raw2.map(cleanPropValue);
+    if (!isPlainObject2(raw2))
+      return raw2;
+    const out = {};
+    for (const key of Object.keys(raw2)) {
+      if (isXmlnsAttr(key))
+        continue;
+      out[key] = cleanPropValue(raw2[key]);
+    }
+    const keys = Object.keys(out);
+    if (keys.length === 0)
+      return "";
+    if (keys.length === 1 && keys[0] === TEXT_KEY)
+      return out[TEXT_KEY];
+    return out;
+  }
+  function emitClarkForChild(rawKey, rawValue, scope, out) {
+    const colonIdx = rawKey.indexOf(":");
+    const prefix = colonIdx === -1 ? "" : rawKey.slice(0, colonIdx);
+    const local = colonIdx === -1 ? rawKey : rawKey.slice(colonIdx + 1);
+    const resolveNs = (value) => {
+      const ownScope = isPlainObject2(value) ? extendScope(value, scope) : scope;
+      return ownScope.get(prefix) ?? "";
+    };
+    const assign = (ns, value) => {
+      const key = ns ? `{${ns}}${local}` : local;
+      const existing = out[key];
+      if (existing === void 0) {
+        out[key] = value;
+      } else if (Array.isArray(existing)) {
+        existing.push(value);
+      } else {
+        out[key] = [existing, value];
+      }
+    };
+    if (Array.isArray(rawValue)) {
+      for (const item of rawValue) {
+        assign(resolveNs(item), cleanPropValue(item));
+      }
+      return;
+    }
+    assign(resolveNs(rawValue), cleanPropValue(rawValue));
+  }
+  function rewritePropToClark(propObj, parentScope) {
+    const scope = extendScope(propObj, parentScope);
+    const out = {};
+    for (const key of Object.keys(propObj)) {
+      if (isXmlnsAttr(key))
+        continue;
+      emitClarkForChild(key, propObj[key], scope, out);
+    }
+    return out;
+  }
+  function rewriteProp(value, parentScope) {
+    if (!isPlainObject2(value))
+      return value;
+    const rewritten = rewritePropToClark(value, parentScope);
+    return Object.keys(rewritten).length === 0 ? "" : rewritten;
+  }
+  function walk3(node, scope) {
+    if (Array.isArray(node)) {
+      for (let index2 = 0; index2 < node.length; index2 += 1) {
+        node[index2] = walk3(node[index2], scope);
+      }
+      return node;
+    }
+    if (!isPlainObject2(node))
+      return node;
+    const childScope = extendScope(node, scope);
+    for (const key of Object.keys(node)) {
+      if (isXmlnsAttr(key)) {
+        delete node[key];
+        continue;
+      }
+      const colonIdx = key.indexOf(":");
+      const ln = colonIdx === -1 ? key : key.slice(colonIdx + 1);
+      const value = node[key];
+      let actualKey = key;
+      if (STRUCTURAL_KEYS.has(ln) && ln !== key) {
+        delete node[key];
+        node[ln] = value;
+        actualKey = ln;
+      }
+      if (ln === "prop") {
+        node[actualKey] = Array.isArray(value) ? value.map((item) => rewriteProp(item, childScope)) : rewriteProp(value, childScope);
+      } else {
+        node[actualKey] = walk3(value, childScope);
+      }
+    }
+    return Object.keys(node).length === 0 ? "" : node;
+  }
+  walk3(root, EMPTY_SCOPE);
+}
 function parseXML(xml, context) {
   context = context ?? {
     attributeNamePrefix: "@",
@@ -80950,6 +81380,9 @@ function parseXML(xml, context) {
   };
   return new Promise((resolve) => {
     const result = getParser(context).parse(xml);
+    if (context.clarkNotationProps) {
+      applyClarkNotation(result, context.attributeNamePrefix ?? "@");
+    }
     resolve(normaliseResult(result));
   });
 }
@@ -83867,7 +84300,7 @@ var BackupService = class {
 // src/features/backup/backupRoutes.ts
 init_crypto();
 init_logger();
-var backups = new Hono2();
+var backups = new Hono3();
 var isSecureContext2 = (c) => c.env.ENVIRONMENT !== "development";
 backups.get("/oauth/google/callback", async (c) => {
   c.header("Cross-Origin-Opener-Policy", "unsafe-none");
@@ -84670,7 +85103,7 @@ async function handleScheduledBackup(env) {
 var backupRoutes_default = backups;
 
 // src/features/telegram/telegramRoutes.ts
-var telegram = new Hono2();
+var telegram = new Hono3();
 telegram.post("/webhook", async (c) => {
   const token = c.env.OAUTH_TELEGRAM_BOT_TOKEN;
   if (!token) return c.text("Bot Token not configured", 500);
@@ -84726,7 +85159,7 @@ async function sendTelegramMessage(token, chatId, text4, replyMarkup) {
 var telegramRoutes_default = telegram;
 
 // src/features/tools/toolsRoutes.ts
-var tools = new Hono2();
+var tools = new Hono3();
 tools.use("/*", authMiddleware);
 tools.get("/server-time", (c) => {
   return c.json({ success: true, time: Date.now() });
@@ -84748,11 +85181,36 @@ var validateLicense = async (license, currentHost) => {
     const clean2 = license.replace(/[^a-zA-Z0-9+/=]/g, "");
     const decoded = atob(clean2);
     const parts = decoded.split("|");
-    if (parts.length !== 3) {
-      console.error(`\u{1F6D1} [validateLicense]: parts.length = ${parts.length}, decoded sample = ${decoded.substring(0, 30)}...`);
+    let domain;
+    let expiry;
+    let signatureBase64;
+    let dataToSign;
+    if (parts.length >= 5) {
+      const product = parts[0];
+      domain = parts[1];
+      const tier = parts[2];
+      expiry = parts[3];
+      signatureBase64 = parts[parts.length - 1];
+      if (product !== "nodeauth") {
+        console.error(`\u{1F6D1} [validateLicense]: product mismatch! expected 'nodeauth', got '${product}'`);
+        return { success: false, message: "license_product_mismatch" };
+      }
+      dataToSign = `${product}|${domain}|${tier}|${expiry}`;
+    } else if (parts.length === 4) {
+      domain = parts[0];
+      const tier = parts[1];
+      expiry = parts[2];
+      signatureBase64 = parts[3];
+      dataToSign = `${domain}|${tier}|${expiry}`;
+    } else if (parts.length === 3) {
+      domain = parts[0];
+      expiry = parts[1];
+      signatureBase64 = parts[2];
+      dataToSign = `${domain}|${expiry}`;
+    } else {
+      console.error(`\u{1F6D1} [validateLicense]: invalid parts count = ${parts.length}, decoded sample = ${decoded.substring(0, 30)}...`);
       return { success: false, message: "license_invalid_format" };
     }
-    const [domain, expiry, signatureBase64] = parts;
     const normDomain = normalizeDomain(domain);
     const normHost = normalizeDomain(currentHost);
     if (normDomain !== normHost) {
@@ -84769,7 +85227,7 @@ var validateLicense = async (license, currentHost) => {
     }
     const PUBLIC_KEY_HEX = "7c3dfb50523e20b2d7df136631f1a46d5b21cf4fde0824bd6dcdfbdd00ea0a8c";
     const sigBytes = Uint8Array.from(atob(signatureBase64), (c) => c.charCodeAt(0));
-    const dataBytes = new TextEncoder().encode(`${domain}|${expiry}`);
+    const dataBytes = new TextEncoder().encode(dataToSign);
     try {
       const publicKey = await crypto.subtle.importKey(
         "raw",
@@ -85044,7 +85502,7 @@ var runHealthCheck = async (env, requestUrl) => {
 };
 
 // src/features/health/healthRoutes.ts
-var health = new Hono2();
+var health = new Hono3();
 health.get("/health-check", async (c) => {
   c.header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   c.header("Pragma", "no-cache");
@@ -85060,7 +85518,7 @@ var healthRoutes_default = health;
 
 // src/features/emergency/emergencyRoutes.ts
 init_request();
-var emergency = new Hono2();
+var emergency = new Hono3();
 emergency.post("/confirm", authMiddleware, rateLimit({
   windowMs: SECURITY_CONFIG.LOCKOUT_TIME,
   max: SECURITY_CONFIG.MAX_LOGIN_ATTEMPTS
@@ -85082,7 +85540,7 @@ emergency.post("/confirm", authMiddleware, rateLimit({
 var emergencyRoutes_default = emergency;
 
 // src/features/auth/wcProxyRoutes.ts
-var wcProxy = new Hono2();
+var wcProxy = new Hono3();
 var proxyRequest = async (targetHost, targetPath, c) => {
   const url = new URL(c.req.url);
   url.hostname = targetHost;
@@ -85147,7 +85605,7 @@ wcProxy.all("/explorer/*", (c) => {
 var wcProxyRoutes_default = wcProxy;
 
 // src/app/index.ts
-var app = new Hono2();
+var app = new Hono3();
 app.use("*", async (c, next) => {
   if (c.env) {
     await initializeEnv(c.env);
@@ -85285,7 +85743,14 @@ var BASE_SCHEMA = [
         updated_at INTEGER,
         updated_by TEXT,
         sort_order INTEGER DEFAULT 0,
-        deleted_at INTEGER
+        deleted_at INTEGER,
+        sync_version INTEGER DEFAULT 0,
+        extra_data TEXT
+    )`,
+  // 金库删除墓碑表 (用于多端增量同步彻底删除的物理清理)
+  `CREATE TABLE IF NOT EXISTS vault_tombstone (
+        id TEXT PRIMARY KEY,
+        purged_at INTEGER NOT NULL
     )`,
   // 云端备份源配置表
   `CREATE TABLE IF NOT EXISTS backup_providers (
@@ -85487,6 +85952,20 @@ var MIGRATIONS = [
     sqlite: `ALTER TABLE vault ADD COLUMN counter INTEGER DEFAULT 0;`,
     mysql: `ALTER TABLE vault ADD COLUMN counter BIGINT DEFAULT 0;`,
     postgres: `ALTER TABLE vault ADD COLUMN counter BIGINT DEFAULT 0;`
+  },
+  {
+    version: 13,
+    name: "add_tombstone_indexes",
+    sqlite: `CREATE INDEX IF NOT EXISTS idx_vault_updated_at ON vault(updated_at); CREATE INDEX IF NOT EXISTS idx_vault_tombstone_purged_at ON vault_tombstone(purged_at);`,
+    mysql: `CREATE INDEX idx_vault_updated_at ON vault(updated_at); CREATE INDEX idx_vault_tombstone_purged_at ON vault_tombstone(purged_at);`,
+    postgres: `CREATE INDEX IF NOT EXISTS idx_vault_updated_at ON vault(updated_at); CREATE INDEX IF NOT EXISTS idx_vault_tombstone_purged_at ON vault_tombstone(purged_at);`
+  },
+  {
+    version: 14,
+    name: "add_sync_version_and_extra_data",
+    sqlite: `ALTER TABLE vault ADD COLUMN sync_version INTEGER DEFAULT 0; ALTER TABLE vault ADD COLUMN extra_data TEXT;`,
+    mysql: `ALTER TABLE vault ADD COLUMN sync_version BIGINT DEFAULT 0; ALTER TABLE vault ADD COLUMN extra_data TEXT;`,
+    postgres: `ALTER TABLE vault ADD COLUMN sync_version BIGINT DEFAULT 0; ALTER TABLE vault ADD COLUMN extra_data TEXT;`
   }
 ];
 async function migrateDatabase(db2) {
@@ -91774,6 +92253,7 @@ var DbFactory = class {
         }
         const sqlite = new Database(dbFile);
         sqlite.pragma("journal_mode = WAL");
+        sqlite.pragma("busy_timeout = 10000");
         const executor2 = new SqliteExecutor(sqlite);
         const db2 = drizzle(sqlite, { schema: sqlite_exports });
         return { executor: executor2, db: db2, schema: sqlite_exports };
